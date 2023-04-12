@@ -1,0 +1,121 @@
+#Alexandra Mancheno-Ferris
+#Team Payre
+#2020
+##### Suite du pipeline ChIPSeq  ########
+########################
+# On part des fichiers produits avec le pipiline Snakemake précédente
+# On va produire ici les fichiers qui compare les fichiers Traitement au Input associé
+# dont le peakCalling avec macs2
+# Pour cela il faut mettre les chemins des Input correspont
+# il faut aussi changer les chemins des fichiers Traitement
+# Dans le cas des histones ont va mettre les marques et les samples seont Act, Rep , controle
+# et on pourra travailler en fonctionne de si les fichiers on été mergé ou pas
+#SAMPLES =["H3K4me1_Act","H3K4me3_Act","H3K27me3_Act","HP1_Act","H3K27ac_Act", "PolII_Act"]
+#SAMPLES =["H3K4me1_Rep","H3K4me3_Rep","H3K27me3_Rep","HP1_Rep","H3K27ac_Rep"]
+#SAMPLES = ["PolII_Rep"]
+#SAMPLES =["H3K4me1_Ctrl","H3K27me3_Ctrl","HP1_Ctrl","H3K27ac_Ctrl"]
+#SAMPLES = ["H3K4me1_Act","H3K4me3_Act","H3K27me3_Act","HP1_Act","H3K27ac_Act",
+             # "PolII_Act","H3K4me1_Rep","H3K4me3_Rep","H3K27me3_Rep","HP1_Rep","H3K27ac_Rep",
+             # "H3K4me1_Ctrl","H3K27me3_Ctrl","HP1_Ctrl","H3K27ac_Ctrl","H3K4me3_Ctrl"]
+#SAMPLES =["H3K4me1_Act"]
+#SAMPLES = ["H3K4me3_Ctrl"]
+
+#SAMPLES = ["H3K27me3_Adult","H3K27me3_E0-4","H3K27me3_E4-8","H3K27me3_E8-12","H3K27me3_E12-16","H3K27me3_E16-20",
+#"H3K27me3_E20-24","H3K27me3_L1","H3K27me3_L2","H3K27me3_L3","H3K27me3_Pupae"]
+SAMPLES = ["H3K4me1_E8-12"]
+
+rule all:
+    input:
+        expand("../../../histone/histone_invivo/H3K4me1/bamfiles/{sample}_sorted.bam",sample = SAMPLES),
+        expand("../../../histone/histone_invivo/H3K4me1/peaks/{sample}_peaks.xls",sample = SAMPLES),
+        #expand("../../../histone/histone_invivo/H3K4me1/peaks/{sample}_control_lambda.bdg",sample = SAMPLES),
+        #expand("../../../histone/histone_invivo/H3K4me1/peaks/{sample}_treat_pileup.bdg",sample = SAMPLES),
+        #expand("../../../histone/histone_invivo/H3K4me1/bigwigpeaks/{sample}_treat_pileup.bw",sample = SAMPLES),
+        #expand("../../../histone/histone_invivo/H3K4me1/bigwigpeaks/{sample}_control_lambda.bw",sample = SAMPLES),
+        #expand("../../../../Clement/histone/normalized_input_log2/{sample}/{sample}_Inputlog2.bw",sample= SAMPLES),
+        #pour quand les bam sont issus des merge des replicats
+        #expand("../../ChIPseq_realisees/bam_merge/{sample}/filt_{sample}.bam",sample = SAMPLES),
+        #pour quand il n'y avait pas de réplicats
+        #expand("../../ChIPseq_realisees/peaks/{sample}/replicate/{sample}_peaks_{replicate}_peaks.xls",sample = SAMPLES,replicate = [1,2]),
+        #expand("../../ChIPseq_realisees/bigwig/normalized_input_log2/{sample}/{sample}_Inputlog2.bw",sample= SAMPLES),
+
+
+rule peak_calling:
+    input:
+        traitement = "../../../histone/histone_invivo/H3K4me1/bamfiles/{sample}_sorted.bam",
+        #traitement = "../../ChIPseq_realisees/bam_merge/{sample}/filt_{sample}.bam",
+        ctrl = "../../../histone/histone_invivo/input/bamfiles/Input_E8-12_sorted.bam"
+    output:
+        peaks = "../../../histone/histone_invivo/H3K4me1/peaks/{sample}_peaks.xls",
+        #control_bdg = "../../ChIPseq_realisees/peaks/{sample}/{sample}_control_lambda.bdg",
+        #chip_bdg = "../../ChIPseq_realisees/peaks/{sample}/{sample}_treat_pileup.bdg"
+    params:
+        outdir = "../../../histone/histone_invivo/H3K4me1/peaks/{sample}",
+        quality = 0.01 ,
+        type_file = "BAM" #mettre BAM si single-end ou BAMPE si paired end
+    message:
+        "PeakCalling de {wildcards.sample}"
+    shell:
+        "macs2 callpeak -t {input.traitement} -c {input.ctrl} "
+        "--nomodel "
+        "-f {params.type_file} "
+        "-g dm -n {params.outdir} -B -q {params.quality} --broad"
+
+
+rule sort_bigwig_macs:
+    input :
+        bdg = "../../../histone/histone_invivo/H3K4me1/peaks/{sample}_control_lambda.bdg"
+    output:
+        control_sort = "../../../histone/histone_invivo/H3K4me1/peaks/{sample}_control_lambda.bedgraph"
+    message:
+        "Sort de {wildcards.sample}"
+    shell:
+        "sort -k1,1 -k2,2n {input.bdg} > {output.control_sort} "
+
+rule sort_bigwig_macs_treat:
+    input :
+        bdg = "../../../histone/histone_invivo/H3K4me1/peaks/{sample}_treat_pileup.bdg"
+    output:
+        treat_sort = "../../../histone/histone_invivo/H3K4me1/peaks/{sample}_treat_pileup.bedgraph"
+    message:
+        "Sort de {wildcards.sample}"
+    shell:
+        "sort -k1,1 -k2,2n {input.bdg} > {output.treat_sort} "
+
+rule bigwig_macs_input:
+    input:
+        control_sort = "../../../histone/histone_invivo/H3K4me1/peaks/{sample}_control_lambda.bedgraph"
+
+    output:
+        control_bigwig = "../../../histone/histone_invivo/H3K4me1/bigwigpeaks/{sample}_control_lambda.bw",
+
+    params:
+        index="../../index/dmel-all-chromosome-r6.13.fasta.sizes"
+    shell:
+        "bedGraph2BigWig {input.control_sort} {params.index} {output.control_bigwig}"
+
+rule bigwig_macs_traitement:
+    input:
+        treat_sort = "../../../histone/histone_invivo/H3K4me1/peaks/{sample}_treat_pileup.bedgraph"
+    output:
+        chip_bigwig = "../../../histone/histone_invivo/H3K4me1/bigwigpeaks/{sample}_treat_pileup.bw"
+    params:
+        index="../../index/dmel-all-chromosome-r6.13.fasta.sizes"
+    shell:
+        "bedGraph2BigWig {input.treat_sort} {params.index} {output.chip_bigwig}"
+
+rule bigwig_input_log2:
+    input:
+        traitement_bw_mapp = "../../../histone/histone_invivo/H3K4me1/bigwig/{sample}.bw",
+        control_bw_mapp = "../../../histone/histone_invivo/H3K4me1/Histone_Input.bw"
+    output:
+        bw_log2 = "../../../histone/histone_invivo/H3K4me1/normalized_input_log2/{sample}/{sample}_Inputlog2.bw"
+    threads: 10
+    params:
+        outdir = "{sample}_Inputlog2",
+        normalizion = "log2",
+        type_file = "bigwig",
+        scale = "1:1"
+    shell:
+        "bigwigCompare -p {threads} -b1 {input.traitement_bw_mapp} -b2 {input.control_bw_mapp} "
+        "--scaleFactors {params.scale} --operation {params.normalizion} -o {params.outdir} -of {params.type_file}"

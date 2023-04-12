@@ -1,0 +1,239 @@
+#Alexandra Mancheno-Ferris
+#Team Payre
+#2020
+##### Pipeline Analyse ChIPseq ########
+########################
+# Tous les fichiers fastq doivent être sous le format fastq
+# Quand les reads sont en single-end : condition_replicat.fastq
+# Quand les reads sont en paired-end : condition_replicat_R1.fastq pour le fichier 1 et condition_replicat_R2.fastq pour le fichier 2
+# L'indexation du génome a été réalisée précédemment avec bwa index
+# Pour lancer le pipeline : snakemake --core 12
+
+##Processus
+# Alignement des reads avec bwa aln et bwa sampe (si paired) ou bwa samse si (singnle)
+# Filtrer les reads alignés avec grep et samtools view
+# Trier les reads en fonction de leurs coordonées chromosomiques
+# Indexation des reads
+# Vérification de la qualité de l'alignement des reads avec samtools flag
+# Obtention des bigwig
+# Détection des pics
+# Génération des plotFinger
+
+# Les conditions sont à nommer ici:
+
+#SAMPLES = ["Input_Act", "Input_Rep","Input_Ctrl","H3K4me1_Act", "H3K4me1_Rep",
+ # "H3K27ac_Act","H3K27ac_Rep","H3K27ac_Ctrl","H3K27me3_Act","H3K27me3_Rep",
+  #"HP1_Act","HP1_Rep","H3K27ac_Rep","H3K27ac_Act", "PolII_Act"]
+#SAMPLES = ["H3K4me1_Ctrl","H3K27ac_Ctrl","H3K27me3_Ctrl","HP1_Ctrl"]
+
+#SAMPLES = ["H3K27ac_Rep", "H3K27ac_Act"]
+#SAMPLES = ["H3K27ac_Ctrl","H3K27me3_Ctrl","H3K4me1_Ctrl","HP1_Ctrl"]
+#SAMPLES = ["dLsd1","Input_dLsd1"]
+#SAMPLES = ["Grh","Input_Grh"]
+#SAMPLES = ["HP1_Rep"]
+
+
+#for merge samples :
+#SAMPLES = ["H3K27ac_Act","H3K27ac_Ctrl","Input_Act","Input_Ctrl","Input_Rep",
+#"H3K27ac_Act","H3K27ac_Rep","H3K27me3_Act","H3K27me3_Rep","H3K4me1_Act","H3K4me1_Rep"]
+#for histone in vivo
+#SAMPLES = ["H3K27me3_Adult","H3K27me3_E0-4","H3K27me3_E4-8","H3K27me3_E8-12","H3K27me3_E12-16","H3K27me3_E16-20",
+#"H3K27me3_E20-24","H3K27me3_L1","H3K27me3_L2","H3K27me3_L3","H3K27me3_Pupae"]
+#SAMPLES = ["Histone_Input"]
+#SAMPLES = ["H3K27ac_E8-12","H3K27ac_E12-16"]
+#SAMPLES = ["Input_E8-12","Input_E12-16"]
+SAMPLES = ["H3K27ac_E8-12","H3K27ac_E12-16"]
+
+# Regle globale
+
+rule all :
+    input:
+        expand("../../../histone/histone_invivo/H3K27ac/rawdata/{sample}.fastq",sample = SAMPLES),
+        #expand("../../ChIPseq_realisees/rawdata/{sample}_{replicate}_R1.fastq",sample = SAMPLES, replicate = [1,2]),
+        #expand("../../ChIPseq_realisees/rawdata/{sample}_{replicate}_R2.fastq",sample = SAMPLES, replicate = [1,2]),
+        #expand("../../../Lsd1_DiStephano/{sample}/{sample}_{replicate}_R2.fastq",sample = SAMPLES, replicate = [1,2,3]),
+        #expand("../../ChIPseq_realisees/alignement/{sample}_alignement/{sample}_{replicate}_R1.sai",sample = SAMPLES, replicate = [1,2]),
+        #expand("../../../../Clement/histone_invivo/H3K27ac/bamfiles/{sample}.sai",sample = SAMPLES),
+        #expand("../../ChIPseq_realisees/alignement/{sample}_alignement/{sample}_{replicate}_R2.sai",sample = SAMPLES, replicate = [1,2]),
+        #expand("../../ChIPseq_realisees/alignement/{sample}_alignement/{sample}_{replicate}.sam",sample = SAMPLES, replicate = [1,2]),
+        #expand("../../ChIPseq_realisees/alignement/{sample}_alignement/{sample}_{replicate}_filt.sam",sample = SAMPLES, replicate = [2]),
+        #expand("../../ChIPseq_realisees/alignement/{sample}_alignement/{sample}_{replicate}.bam",sample = SAMPLES, replicate = [2]),
+        #expand("../../../../Clement/histone_invivo/H3K27ac/bamfiles/{sample}.sai",sample = SAMPLES),
+        #expand("../../../../Clement/histone_invivo/H3K27ac/bamfiles/{sample}.bam",sample = SAMPLES),
+        expand("../../../histone/histone_invivo/H3K27ac/bamfiles/{sample}_sorted.bam",sample = SAMPLES),
+        # #expand("../../ChIPseq_realisees/alignement/{sample}_alignement/filt_{sample}_{replicate}.bam",sample = SAMPLES, replicate = [2]),
+        # #expand("../../ChIPseq_realisees/alignement/{sample}_alignement/filt_{sample}_{replicate}.bam.bai",sample = SAMPLES,replicate = [1,2]),
+        #expand("../../../histone/histone_invivo/H3K27ac/bamfiles/{sample}.bam.bai",sample = SAMPLES),
+        # #expand("../../ChIPseq_realisees/alignement/{sample}_alignement/filt_{sample}_1.bam.bai",sample = SAMPLES),
+        expand("../../../histone/histone_invivo/H3K27ac/bigwig/{sample}.bw",sample = SAMPLES),
+        #expand("../../ChIPseq_realisees/bigwig/{sample}/{sample}_{replicate}.bw",sample = SAMPLES,replicate = [1]),
+        #expand("../../ChIPseq_realisees/alignement/{sample}_alignement/{sample}_{replicate}_alignement.txt",sample = SAMPLES, replicate = [1,2])
+        #expand("../../ChIPseq_realisees/bam_merge/{sample}/filt_{sample}.bam", sample = SAMPLES),
+        #expand("../../ChIPseq_realisees/bam_merge/{sample}/filt_{sample}.bam.bai",sample = SAMPLES),
+        #expand("../../ChIPseq_realisees/bigwig/{sample}/merge/{sample}.bw", sample = SAMPLES)
+# Alignement des reads
+
+
+
+rule read_align_single:
+    input:
+        genome = "../../../genome_reference/dmel-all-chromosome-r6.13.fasta",
+        #read = "../../ChIPseq_realisees/{sample}/{sample}_{replicate}_R1.fastq"
+        read = "../../../histone/histone_invivo/H3K27ac/rawdata/{sample}.fastq"
+    output:
+        #sam = "../../ChIPseq_realisees/alignement/{sample}_alignement/{sample}_{replicate}.sai"
+        sam =temp("../../../histone/histone_invivo/H3K27ac/bamfiles/{sample}.sai")
+    message:
+        #"Alignement {wildcards.sample}_{wildcards.replicate} (single-end)"
+        "Alignement {wildcards.sample} (single-end)"
+    shell:
+        "bwa aln -t1 {input.genome} {input.read} > {output.sam}"
+
+
+rule sam_align_single:
+    input:
+        #sai_1 = "../../ChIPseq_realisees/alignement/{sample}_alignement/{sample}_{replicate}_R1.sai",
+        sai_1 = "../../../histone/histone_invivo/H3K27ac/bamfiles/{sample}.sai",
+        genome = "../../../genome_reference/dmel-all-chromosome-r6.13.fasta",
+        #read_R1 = "../../ChIPseq_realisees/rawdata/{sample}_{replicate}_R1.fastq",
+        read_R1 = "../../../histone/histone_invivo/H3K27ac/rawdata/{sample}.fastq",
+
+    priority: 9
+    output:
+        sam = temp("../../../histone/histone_invivo/H3K27ac/bamfiles/{sample}.sam")
+    message:
+        "Alignement {wildcards.sample} (single-end)"
+    shell:
+        "bwa samse {input.genome} {input.sai_1} {input.read_R1} > {output.sam}"
+
+
+# # rule sam_align_paired:
+# #     input:
+# #         sai_1 = "../../ChIPseq_realisees/alignement/{sample}_alignement/{sample}_{replicate}_R1.sai",
+# #         genome = "../../index/dmel-all-chromosome-r6.13.fasta",
+# #         read_R1 = "../../ChIPseq_realisees/rawdata/{sample}_{replicate}_R1.fastq",
+# #         sai_2 = "../../ChIPseq_realisees/alignement/{sample}_alignement/{sample}_{replicate}_R2.sai",
+# #         read_R2 = "../../ChIPseq_realisees/rawdata/{sample}_{replicate}_R2.fastq"
+# #     priority: 9
+# #     output:
+# #         sam = temp("../../ChIPseq_realisees/alignement/{sample}_alignement/{sample}_{replicate}.sam")
+# #     message:
+# #         "Alignement {wildcards.sample}_{wildcards.replicate} (paired-end)"
+# #     shell:
+# #         "bwa sampe {input.genome} {input.sai_1} {input.sai_2} {input.read_R1} {input.read_R2} > {output.sam}"
+
+# #Filtrage et conversion en bam
+
+rule filter:
+    input:
+        #sam = "../../ChIPseq_realisees/alignement/{sample}_alignement/{sample}_{replicate}.sam",
+        sam ="../../../histone/histone_invivo/H3K27ac/bamfiles/{sample}.sam",
+        genome_index = "../../../genome_reference/dmel-all-chromosome-r6.13.fasta.fai"
+    output:
+        sam_filt = temp("../../../histone/histone_invivo/H3K27ac/samfiles/{sample}.sam")
+    priority: 8
+    message:
+        "Filtrage {wildcards.sample}"
+    shell:
+        "grep 'XT:A:U' {input.sam} > {output.sam_filt}"
+
+rule sam_to_bam:
+    input:
+        sam = "../../../histone/histone_invivo/H3K27ac/samfiles/{sample}.sam",
+        genome_index = "../../../genome_reference/dmel-all-chromosome-r6.13.fasta.fai"
+    output:
+        bam = temp("../../../histone/histone_invivo/H3K27ac/bamfiles/{sample}.bam")
+    priority: 7
+    message:
+        "Sam to Bam {wildcards.sample}"
+    shell:
+        "samtools view -bS -F 1548 -q 30 -t {input.genome_index} {input.sam} -o {output.bam}"
+
+# #tri en fonction des coordonnées chromosomiques
+
+rule order_bam:
+    input:
+        bam = "../../../histone/histone_invivo/H3K27ac/bamfiles/{sample}.bam"
+    output:
+        bam_sort = "../../../histone/histone_invivo/H3K27ac/bamfiles/{sample}_sorted.bam"
+    priority: 6
+    message:
+        "Tri du fichier en fonction des coordonnées chromosomiques {wildcards.sample}"
+    shell:
+        "samtools sort {input.bam} -o {output.bam_sort}"
+
+# # Verification de la qualité de l'alignement
+
+rule quality_alignement:
+    input:
+        bam_sort = "../../../histone/histone_invivo/H3K27ac/bamfiles/{sample}_sorted.bam"
+    output:
+        quality_align = "../../../histone/histone_invivo/H3K27ac/bamfiles/{sample}_alignement.txt"
+    priority: 5
+    message:
+        "Verification de nombre de reads alignes {wildcards.sample}"
+    shell:
+        "samtools flagstat {input.bam_sort} > {output.quality_align}"
+
+#indexation
+
+rule indexation:
+    input:
+        #bam = "../../ChIPseq_realisees/alignement/{sample}_alignement/filt_{sample}_{replicate}.bam"
+        #bam ="../../ChIPseq_realisees/bam_merge/{sample}/filt_{sample}.bam"
+        #bam = "../../ChIPseq_realisees/alignement/{sample}_alignement/filt_{sample}.bam"
+        bam = "../../../histone/histone_invivo/H3K27ac/bamfiles/{sample}_sorted.bam"
+    output:
+        #index_bam = "../../ChIPseq_realisees/alignement/{sample}_alignement/filt_{sample}_{replicate}.bam.bai"
+        #index_bam = "../../ChIPseq_realisees/alignement/{sample}_alignement/filt_{sample}_1.bam.bai"
+        #index_bam ="../../ChIPseq_realisees/bam_merge/{sample}/filt_{sample}.bam.bai"
+        index_bam = "../../../histone/histone_invivo/H3K27ac/bamfiles/{sample}.bam.bai"
+    threads: 10
+    message:
+        "Indexation de {wildcards.sample}"
+    priority: 4
+    shell:
+        "samtools index  -@ {threads} {input.bam}"
+
+# bam_to_bigwig
+
+rule bam_to_bigwig:
+    input:
+        bam = "../../../histone/histone_invivo/H3K27ac/bamfiles/{sample}_sorted.bam"
+    output:
+        bigwig ="../../../histone/histone_invivo/H3K27ac/bigwig/{sample}.bw"
+    threads: 10
+    conda:
+        "environment.yaml"
+    message:
+        "BAM to BigWig de {wildcards.sample}"
+    shell:
+        "bamCoverage -p {threads} -b {input.bam} -of bigwig -o {output.bigwig} --normalizeUsing RPKM --effectiveGenomeSize 125464728"
+
+# # merge_bam
+
+# # rule merge_bam :
+# #     input:
+# #         bam_1 = "../../ChIPseq_realisees/alignement/{sample}_alignement/filt_{sample}_1.bam",
+# #         bam_2 = "../../ChIPseq_realisees/alignement/{sample}_alignement/filt_{sample}_2.bam"
+# #     output:
+# #         bam_merge = "../../ChIPseq_realisees/bam_merge/{sample}/filt_{sample}.bam"
+# #     threads: 10
+# #     message:
+# #         "Merge BAM {wildcards.sample}"
+# #     shell:
+# #         "samtools merge --threads {threads} {output.bam_merge} {input.bam_1} {input.bam_2}"
+# #
+# # rule bam_to_bigwig_merge:
+# #     input:
+#         #bam = "../../ChIPseq_realisees/bam_merge/{sample}/filt_{sample}.bam"
+#         bam ="../../ChIPseq_realisees/alignement/{sample}_alignement/filt_{sample}_1.bam"
+#     output:
+#         bigwig ="../../ChIPseq_realisees/bigwig/{sample}/merge/{sample}.bw"
+#     threads: 10
+#     conda:
+#         "environment.yaml"
+#     message:
+#         "BAM to BigWig de {wildcards.sample}"
+#     shell:
+#         "bamCoverage -p {threads} -b {input.bam} -of bigwig -o {output.bigwig} --normalizeUsing RPKM --effectiveGenomeSize 125464728"
