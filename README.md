@@ -5,3 +5,6 @@ multiQC Branches: HTML Quality files created with FastQC and multiQC
 
 Snakemake Branch: Snakemake pipelines used to generate the pre-processed files and performed the peaks calling with MACS
 
+Logo Reasearch : RSAT results 
+
+Databases : All the table resuming the results and comparison performed 
