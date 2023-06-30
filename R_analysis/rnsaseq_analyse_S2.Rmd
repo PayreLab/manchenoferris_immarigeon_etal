@@ -1,0 +1,1717 @@
+---
+title: "RNAseq_analyse"
+author: "Alexandra MANCHEÑO FERRIS"
+date: "14/02/2017"
+output:
+  html_document:
+    number_sections: TRUE
+    code_folding: "hide"
+    toc: true
+    toc_depth: 5
+---
+
+# RNAseq
+.
+On cherche les gènes cibles de Shavenbaby dans les cellules S2 
+
+
+```{r, message=FALSE, warning=FALSE, include=FALSE}
+#source("https://bioconductor.org/biocLite.R")
+
+library(Rsamtools)
+library(GenomicAlignments)
+library(HTSFilter)
+library(edgeR)
+library(mixOmics)
+library(gplots)
+library(calibrate)
+library(RColorBrewer)
+library(ade4)
+library(DESeq2)
+library(ggplot2)
+library(VennDiagram) 
+library(ggpubr)
+library(dplyr)
+library(tidyr)
+library(forcats)
+library(rtracklayer)
+library(ggthemes)
+library(Glimma)
+```
+
+Les données de RNAseq on été alignés sur le génome de la Drosophile en dm6. 
+
+TODO rajout des schéma de snakemake 
+
+
+# Chargement des données 
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE, paged.print=TRUE}
+load("edgeR_Result.RData")
+B1_1_RNA=read.table("../1B1/1B1_RNA.htseq.txt")
+B1_1_RNA=data.frame(B1_1_RNA)
+colnames(B1_1_RNA)=c("genes","intensity")
+B1_2_RNA = read.table("../1B2/1B2_RNA.htseq.txt")
+B1_2_RNA=data.frame(B1_2_RNA)
+colnames(B1_2_RNA)=c("genes","intensity")
+FS1_RNA = read.table('../FS1/FS_1_RNA.htseq.txt')
+FS1_RNA=data.frame(FS1_RNA)
+colnames(FS1_RNA)=c("genes","intensity")
+FS2_RNA = read.table('../FS2/FS_2_RNA.htseq.txt')
+FS2_RNA=data.frame(FS2_RNA)
+colnames(FS2_RNA)=c("genes","intensity")
+S2_1_RNA=read.table("../S2_1/S2_1_RNA.htseq.txt")
+S2_1_RNA=data.frame(S2_1_RNA)
+colnames(S2_1_RNA)=c("genes","intensity")
+S2_2_RNA=read.table("../S2_2/S2_2_RNA.htseq.txt")
+S2_2_RNA=data.frame(S2_2_RNA)
+colnames(S2_2_RNA)=c("genes","intensity")
+```
+
+
+
+```{r include=FALSE}
+##Merging table and read table 
+# RNAseq = merge(B1_1_RNA,B1_2_RNA,by="genes")
+# RNAseq
+# RNAseq = merge(RNAseq,FS1_RNA,by="genes")
+# RNAseq = merge(RNAseq,FS2_RNA,by="genes")
+# RNAseq = merge(RNAseq,S2_1_RNA,by="genes")
+# RNAseq = merge(RNAseq,S2_2_RNA,by="genes")
+# colnames(RNAseq)=c("genes","Act_1","Act_2","Rep_1","Rep_2","Contr_1","Contr_2")
+# rownames(RNAseq)=RNAseq$genes
+# RNAseq = RNAseq[,-1]
+# RNAseq = RNAseq[-1,]#a faire 4 fois
+# RNAseq
+#write.table(RNAseq, file = "RNAseq_mat.txt")
+#RNAseq=read.table("/Volumes/Promise\ RAID/Work/Alex_analyse/RNASEQ/RNASEQ/script/RNAseq_mat.txt",header = TRUE)
+
+
+#head(ActVsRep)
+# ActVsRep = RNAseq[,-5:-6]
+# ActVsContr = RNAseq[,-3:-4]
+# RepVsContr = RNAseq[,-1:-2]
+
+```
+
+## Visualisation des datas
+# Toutes les conditions 
+```{r message=FALSE, warning=FALSE}
+head(RNAseq,6)
+hist(log(RNAseq$Act_1),col='grey',breaks= 25,main ='',xlab = "Log(counts)")
+
+```
+Les différents réplicats des différents échantillons suivent une distribution similaire. 
+
+
+## Filtrage des données: 
+
+Nous récupérons ici les gènes pour lesquels les données ne sont pas nulles. 
+Les conditions d'expériences : dans les lignées B1 nous sommes en présence de Shavenbaby sous forme activateur, dans la lignée FS2 nous sommes en présence de Shavenbaby sous forme répresseur en majorité et la lignée S2 est la lignée contrôle. 
+ 
+
+```{r include=FALSE}
+conditions=sub('_.',"",colnames(RNAseq))
+filter=HTSFilter(RNAseq,conditions)
+RNAseq_filt = filter$filteredData
+dim(RNAseq_filt)
+dim(filter$removedData)
+colMeans(filter$filteredData)
+colMeans(filter$removedData)
+```
+
+Nous gardons 8019 gènes après filtrage, nous avons supprimé 9728 gènes sur les 17747 de départ. 
+
+ 
+
+Après avoir filtré, il faut maintenant normaliser les données. 
+
+
+# Normalisation des données en utilisant edgeR.
+
+Nous normalisons les données pour les rendre comparables entre elles. Nous les normalisons au niveau de la profondeur et au niveau du statut transcriptionnel, c'est-à-dire en tenant compte des gènes exprimés dans une conditions et pas dans l'autre.
+
+```{r echo=FALSE}
+colSums(RNAseq_filt)/10^6
+```
+
+Nous avons de 14 à 16 millions de reads par conditions. Les pools semblent bon. 
+Pour le reste de l'étude, nous devons transformer les données en DGElist
+
+```{r message=FALSE, warning=FALSE}
+RNAseq_DGE= DGEList(counts = RNAseq_filt, group = conditions)
+RNAseq_norm = calcNormFactors(RNAseq_DGE)
+head(RNAseq_norm$counts)
+head(RNAseq_norm$samples)
+dim(RNAseq_norm)
+barplot(RNAseq_norm$samples$lib.size*1e-6, names=c("Act_1","Act_2","Rep_1","Rep_2","Contr_1","Contr_2"), ylab = "Library size millions", main="Library size")
+
+```
+
+Les différents réplicats se regroupent en fionction de leur logFC.
+
+# Calcul du cpm : 
+
+Le cpm (count per millions). Nous tenons compte de la profondeur de la librairie. 
+
+cpm = nombre de reads / taille de la librairie 
+
+```{r}
+cpmRNAseq = cpm(RNAseq_norm, normalized.lib.sizes = TRUE)
+head(cpmRNAseq)
+barplot(cpmRNAseq[1,], main = "CPM pour 128up", las = 3, cex.names = 0.8)
+boxplot(log(cpmRNAseq+1), main = "CPM", ylab = "log(CPM+1)" )
+
+boxplot(cpmRNAseq, main = "CPM wihtout outliers", ylab = "CPM",outline= F )
+
+```
+
+# Analyses descriptive 
+Avant de poursuivre l'analyse statistique. Nous devons voir si nos données sont bonnes. 
+Nous allons faire cela avec une analyse par MDSplot et ACP. 
+
+```{r echo=FALSE}
+plotMDS(RNAseq_norm)
+groups = RNAseq_norm$samples$group
+glMDSPlot(RNAseq_norm, groups = groups)
+plot(princomp(RNAseq_norm))
+acpRNA=princomp(RNAseq_norm)
+biplot(acpRNA)
+a <- seq(0,2*pi,length=100)
+plot( cos(a), sin(a), type='l', lty=3,
+      xlab='comp 1', ylab='comp 2', main="Cercle des corrélations" )
+v <- t(acpRNA$loadings)[1:2,]
+arrows(0,0, v[1,], v[2,], col='red')
+text(v[1,], v[2,],colnames(v))
+```
+
+Nous pouvons voir que l'on peut distinguer nos 3 groupes en fonction de leur génome. 
+
+# Estimer dispersion
+
+```{r echo=FALSE}
+condit = relevel(factor(conditions),ref= "Contr")
+condit
+design = model.matrix(~0+condit)
+design
+dispersion = estimateGLMCommonDisp(RNAseq_DGE,design,verbose = FALSE)
+disp= estimateDisp(RNAseq_norm,design,robust = TRUE)
+disp$common.dispersion
+sqrt(disp$common.dispersion)
+plotBCV(disp)
+dispersion = estimateGLMTrendedDisp(dispersion,design)
+dispersion = estimateGLMTagwiseDisp(dispersion,design)
+plotBCV(dispersion)
+```
+Le coefficient de variation biologique est de 0.23.
+Nous observons que la dispersion est assez régulière et que nous réussisons à la faire suivre une régréssion linéaire. 
+
+## Calcul des fits 
+
+```{r echo=FALSE}
+colnames(design) = levels(condit)
+fitRNAseq = glmFit(dispersion,design)
+colnames(design)
+my.contrast = makeContrasts(
+  ActVsRep = Act-Rep,
+  ActVsContr = Act-Contr,
+  RepVsContr = Rep-Contr, 
+  RepVsAct = Rep - Act,
+  levels = design
+)
+
+```
+
+# Recherche des gènes différentiellement
+
+```{r include=FALSE}
+lrt.2 = as.list(c(1:ncol(my.contrast)))
+names(lrt.2) = colnames(my.contrast)
+for (i in 1:ncol(my.contrast))
+  lrt.2[[i]] = glmLRT(fitRNAseq, contrast = my.contrast[,i])
+names(lrt.2)
+head(lrt.2$ActVsContr$table)
+lrt.2.tables=lrt.2
+for (i in 1:ncol(my.contrast)){
+  lrt.2.tables[[i]] <- lrt.2[[i]]$table;
+  lrt.2.tables[[i]]$FC[lrt.2.tables[[i]]$logFC>0] <- 2^(lrt.2.tables[[i]]$logFC[lrt.2.tables[[i]]$logFC>0]);
+  lrt.2.tables[[i]]$FC[lrt.2.tables[[i]]$logFC<0] <- (-1)*2^((-1)*(lrt.2.tables[[i]]$logFC[lrt.2.tables[[i]]$logFC<0]));
+  lrt.2.tables[[i]]$BH <- p.adjust(lrt.2.tables[[i]]$PValue,method="BH");
+  lrt.2.tables[[i]]$Bonf <- p.adjust(lrt.2.tables[[i]]$PValue,method="bonf");
+  lrt.2.tables[[i]]$BH.bin <- as.numeric(lrt.2.tables[[i]]$BH<0.05);
+  lrt.2.tables[[i]]$Bonf.bin <- as.numeric(lrt.2.tables[[i]]$Bonf<0.05)
+}
+
+
+sum.Bh = c()
+for (i in 1:ncol(my.contrast)){
+  sum.Bh <- c(sum.Bh, sum(lrt.2.tables[[i]]$BH.bin))
+}
+names(sum.Bh) <- names(lrt.2)
+sum.Bh
+
+
+
+#intersection :
+#sum( rownames( lrt.2.tables$RepVsContr[lrt.2.tables$RepVsContr$BH.bin == 1,] ) %in% rownames( lrt.2.tables$ActVsContr[lrt.2.tables$ActVsContr$BH.bin == 1,] ) & rownames( lrt.2.tables$RepVsContr[lrt.2.tables$RepVsContr$BH.bin == 1,] ) %in% rownames( lrt.2.tables$ActVsRep[lrt.2.tables$ActVsRep$BH.bin == 1, ] )
+DE_Act_Ctrl_p= rownames(lrt.2.tables$ActVsContr)[lrt.2.tables$ActVsContr$BH.bin == 1]
+DE_Rep_Ctrl_p = rownames(lrt.2.tables$RepVsContr)[lrt.2.tables$RepVsContr$BH.bin == 1]
+```
+
+Nous avons 1177 gènes différentiellement exprimés entre Act/Rep , 3219 Act/Contr et 566 Rep/Contr.
+
+```{r}
+lrt=glmLRT(fitRNAseq,design)
+#topTags(lrt.2$ActVsRep,n=1177,p.value = 0.05,sort.by = "logFC")
+
+#write.table(topTags(lrt.2$ActVsRep,n = 1177,p.value = 0.005,sort.by = "logFC"), file = "topTagsActVsRep005.txt")
+topActContr=topTags(lrt.2$ActVsContr,n=3219,p.value = 0.05,sort.by = "logFC")
+topActContr_005 = topTags(lrt.2$ActVsContr,n=3219,p.value = 0.005,sort.by = "logFC")
+topActContr_001 = topTags(lrt.2$ActVsContr,n=3219,p.value = 0.001,sort.by = "logFC")
+#write.table(topActContr, file = "topTagsActVsContr.txt")
+
+topRepContr_05=topTags(lrt.2$RepVsContr,n=566,p.value = 0.05,sort.by = "logFC")
+topRepContr_005=topTags(lrt.2$RepVsContr,n=566,p.value = 0.005,sort.by = "logFC")
+topRepContr_001=topTags(lrt.2$RepVsContr,n=566,p.value = 0.001,sort.by = "logFC")
+#write.table(topRepContr_001, file = "topTagsRepVsContr001.txt")
+#topInter=topTags(lrt.2$inter)
+#colnames(design)
+topActRep = rownames(topTags(lrt.2$ActVsRep))
+gene_order_Act_Rep=order(lrt.2$ActVsRep$table$PValue)
+gene_sorted_pVal_ActREP = cpm(RNAseq_norm)[gene_order_Act_Rep,]
+#write.table(gene_sorted_pVal_ActREP,"cpm_gene_sorted_pval_ActVSRep.txt")
+
+gene_order_Act_Contr=order(lrt.2$ActVsContr$table$PValue)
+gene_sorted_pVal_Act_contr= cpm(RNAseq_norm)[gene_order_Act_Contr,]
+#write.table(gene_sorted_pVal_Act_contr,"cpm_gene_sorted_pval_ActVSContr.txt")
+
+gene_order_Rep_Contr=order(lrt.2$RepVsContr$table$PValue)
+gene_sorted_pVal_Rep_contr = cpm(RNAseq_norm)[gene_order_Rep_Contr,]
+#write.table(gene_sorted_pVal_Rep_contr, "cpm_gene_sorted_pval_RepVSContr.txt")
+#save.image("edgeR_Result.RData")
+#load("edgeR_Result.RData")
+
+
+```
+
+
+
+
+# ActVsRep
+
+Nous nous intéressons ici uniquement aux conditions en présence de l'Activateur Vs présence du Répresseur .
+
+```{r}
+head(ActVsRep)
+hist(log(ActVsRep),col='grey',breaks= 25,main ='',xlab = "Log(counts)")
+```
+
+##Filtrage des données: 
+
+
+
+
+
+```{r echo=FALSE}
+conditions_Act_rep=sub('_.',"",colnames(ActVsRep))
+
+conditions_Act_rep
+filter=HTSFilter(ActVsRep,conditions_Act_rep)
+ActVsRep_filt = filter$filteredData
+dim(ActVsRep_filt)
+dim(filter$removedData)
+colMeans(filter$filteredData)
+colMeans(filter$removedData)
+
+```
+On garde 7934 gènes après filtrage. 
+
+#Normalisation des données en utilisant edgeR.
+
+Nous normalisons les données pour les rendre comparables entre elles. Nous les normalisons au niveau de la profondeur et au niveau du statut transcriptionnel, c'est-à-dire en tenant compte des gènes exprimés dans une conditions et pas dans l'autre.
+
+```{r}
+colSums(ActVsRep_filt)/10^6
+```
+Nous avons de 14 à 16 millions de reads par conditions. Les pools semblent bon. 
+
+```{r}
+
+ActVsRep_DGE= DGEList(counts = ActVsRep_filt, group = conditions_Act_rep)
+ActVsRep_norm = calcNormFactors(ActVsRep_DGE)
+head(ActVsRep_norm$counts)
+head(ActVsRep_norm$samples)
+dim(ActVsRep_norm)
+barplot(ActVsRep_norm$samples$lib.size*1e-6, names=c("Act_1","Act_2","Rep_1","Rep_2"), ylab = "Library size millions", main="Library size")
+plotMDS(ActVsRep_norm)
+```
+
+
+#Calcul du cpm : 
+Le cpm (count per millions). Nosu tenons compte de la profondeur de la librairie. 
+
+cpm = nombre de reads / taille de la librairie 
+
+```{r}
+cpm_ActVsRep = cpm(ActVsRep_norm, normalized.lib.sizes = TRUE)
+head(cpm_ActVsRep)
+barplot(cpm_ActVsRep[1,], main = "CPM pour 128up", las = 3, cex.names = 0.8)
+```
+
+
+
+# Estimer dispersion
+
+```{r echo=FALSE}
+
+condit_Act_Rep = relevel(factor(conditions_Act_rep),ref= "Rep")
+design_Act_Rep = model.matrix(~0+condit_Act_Rep)
+
+
+dispersionActVsRep = estimateGLMCommonDisp(ActVsRep_DGE,design_Act_Rep,verbose = FALSE)
+dispersionActVsRep = estimateGLMTrendedDisp(dispersionActVsRep,design_Act_Rep)
+dispersionActVsRep = estimateGLMTagwiseDisp(dispersionActVsRep,design_Act_Rep)
+plotBCV(dispersionActVsRep)
+
+disp_ActVsRep= estimateDisp(ActVsRep_norm,design_Act_Rep,robust = TRUE)
+disp_ActVsRep$common.dispersion
+sqrt(disp_ActVsRep$common.dispersion)
+plotBCV(disp_ActVsRep)
+```
+Le coefficient de variation biologique est de 0.23 entre les conditions Activatrice et Represseur. 
+Nous observons que la dispersion est assez régulière et que nous réussisons à la faire suivre une régréssion linéaire. 
+
+
+##Calcul des fits 
+
+```{r}
+colnames(design_Act_Rep) = levels(condit_Act_Rep)
+fitActVsRep = glmFit(dispersionActVsRep,design_Act_Rep)
+```
+
+# Volcano Plot
+```{r echo=FALSE}
+ActVsRep_et = exactTest(dispersionActVsRep)
+resEdgeR=topTags(ActVsRep_et,n=1177)
+tab_volcano = data.frame(logFC = lrt.2.tables$ActVsRep$logFC, negLogPval = -log10(lrt.2.tables$ActVsRep$PValue))
+head(tab_volcano)
+par(mar = c(5, 4, 4, 4))
+plot(tab_volcano, pch = 16, cex = 0.6, xlab = expression(log[2]~fold~change),
+ylab = expression(-log[10]~pvalue), main = "Gènes DE en condition Act/Rep")
+lfc = 1.6
+pval = 0.05
+## Selecting interest genes
+signGenes = (abs(tab_volcano$logFC) > lfc & tab_volcano$negLogPval > -log10(pval))
+## Identifying the selected genes
+points(tab_volcano[signGenes, ], pch = 16, cex = 0.8, col = "red")
+abline(h = -log10(pval), col = "green3", lty = 2)
+abline(v = c(-lfc, lfc), col = "blue", lty = 2)
+mtext(paste("pval =", pval), side = 4, at = -log10(pval), cex = 0.8, line = 0.5, las = 1)
+mtext(c(paste("-", lfc, "fold"), paste("+", lfc, "fold")), side = 3, at = c(-lfc, lfc),
+cex = 0.8, line = 0.5)
+text(-4.011416,-log10(5.587971e-10),"Ama",pos = 3)
+text(-4.753459,-log10(7.037052e-39),"Ddr",pos=3)
+text(4.322469,-log10(7.040417e-37),"Fas1",pos = 3)
+text( 5.063946,-log10(1.985230e-34),"ClC-a",pos = 3)
+text( 7.042144,-log10(7.031235e-47),"CG8568",pos = 3)
+text( -5.259285,-log10(2.556956e-45),"CG5973",pos = 3)
+```
+
+
+## Plot differential gene Act vs Rep
+
+```{r echo=FALSE}
+summary(diffGeneActRep <- decideTestsDGE(lrt.2$ActVsRep,lfc = 1.6))
+detags=rownames(RNAseq_norm)[as.logical(diffGeneActRep)]
+plotSmear(lrt.2$ActVsRep,de.tags = detags, main = "Gènes DE en conditions Activateur contre Répresseur")
+
+summary(diffGeneRepAct <- decideTestsDGE(lrt.2$RepVsAct,lfc = 1.6))
+detags=rownames(RNAseq_norm)[as.logical(diffGeneRepAct)]
+plotSmear(lrt.2$RepVsAct,de.tags = detags, main = "Gènes DE en conditions Répresseur contre Activateur")
+upregActRep = (rownames(RNAseq_norm)[as.logical(diffGeneActRep==1)==TRUE] )
+#write.table(upregActRep,"gene_upreg_1BFS.txt")
+downregActRep = (rownames(RNAseq_norm)[as.logical(diffGeneActRep==-1)==TRUE] )
+#write.table(downregActRep,"gene_downreg_1BFS.txt")
+upregRepAct = (rownames(RNAseq_norm)[as.logical(diffGeneRepAct==1)==TRUE] )
+#write.table(upregRepAct,"gene_upreg_FS1B.txt")
+downregRepAct = (rownames(RNAseq_norm)[as.logical(diffGeneRepAct==-1)==TRUE] )
+#write.table(downregRepAct,"gene_downreg_FS1B.txt")
+
+all_ActRep=rownames(RNAseq_norm)[as.logical(diffGeneActRep)==TRUE]
+#write.table(all_ActRep,"allDE_ActRep.txt")
+
+```
+
+
+Il y a 620 gènes downregulés, 6842 gènes dont l'expression ne changent pas et 494 gènes qui sont uprégulés en présence de Svb activateur par rapport à Svb inhibiteur.
+
+# Act VS Contr
+
+```{r echo=FALSE}
+conditions_Act_Contr=sub('_.',"",colnames(ActVsContr))
+
+conditions_Act_Contr
+filter=HTSFilter(ActVsContr,conditions_Act_Contr)
+ActVsContr_filt = filter$filteredData
+ActVsContr_DGE= DGEList(counts = ActVsContr_filt, group = conditions_Act_Contr)
+ActVsContr_norm = calcNormFactors(ActVsContr_DGE)
+cpm_ActVsContr = cpm(ActVsContr_norm, normalized.lib.sizes = TRUE)
+condit_Act_Contr = relevel(factor(conditions_Act_Contr),ref= "Contr")
+design_Act_Contr = model.matrix(~0+condit_Act_Contr)
+
+
+dispersionActVsContr = estimateGLMCommonDisp(ActVsContr_DGE,design_Act_Contr,verbose = FALSE)
+dispersionActVsContr = estimateGLMTrendedDisp(dispersionActVsContr,design_Act_Contr)
+dispersionActVsContr = estimateGLMTagwiseDisp(dispersionActVsContr,design_Act_Contr)
+
+
+disp_ActVsContr= estimateDisp(ActVsContr_norm,design_Act_Contr,robust = TRUE)
+disp_ActVsContr$common.dispersion
+sqrt(disp_ActVsContr$common.dispersion)
+
+colnames(design_Act_Contr) = levels(condit_Act_Contr)
+fitActVsContr = glmFit(dispersionActVsContr,design_Act_Contr)
+
+ActVsContr_et = exactTest(dispersionActVsContr)
+resEdgeR_ActCtrl=topTags(ActVsContr_et,n=3219)
+tab_volcano = data.frame(logFC = lrt.2.tables$ActVsContr$logFC, negLogPval = -log10(lrt.2.tables$ActVsContr$PValue))
+head(tab_volcano)
+par(mar = c(5, 4, 4, 4))
+plot(tab_volcano, pch = 16, cex = 0.6, xlab = expression(log[2]~fold~change),
+ylab = expression(-log[10]~pvalue), main = "Gènes DE Act/Ctrl")
+lfc = 0 
+pval = 0.05
+
+## Selecting interest genes
+signGenes = (abs(tab_volcano$logFC) > lfc & tab_volcano$negLogPval > -log10(pval))
+## Identifying the selected genes
+points(tab_volcano[signGenes, ], pch = 16, cex = 0.8, col = "red")
+abline(h = -log10(pval), col = "green3", lty = 2)
+abline(v = c(-lfc, lfc), col = "blue", lty = 2)
+mtext(paste("pval =", pval), side = 4, at = -log10(pval), cex = 0.8, line = 0.5, las = 1)
+mtext(c(paste("-", lfc, "fold"), paste("+", lfc, "fold")), side = 3, at = c(-lfc, lfc), cex = 0.8, line = 0.5)
+
+text(8.394441, -log10(8.54811e-72),"svb",pos = 3)
+text(5.168650,-log10(3.146907e-16),"Ace",pos = 3)
+text(-5.005797,-log10(3.500281e-39),"Ten-a",pos = 3)
+text(-0.05103951,-log10(0.8660058),"Mnt",pos = 3)
+text(2.250347,-log10(7.663101e-11), "MtnE",pos = 3)
+#rajouter étiquette gène 
+
+summary(diffGeneActContr <- decideTestsDGE(lrt.2$ActVsContr,lfc = 0))
+detags_ActContr=rownames(RNAseq_norm)[as.logical(diffGeneActContr)]
+plotSmear(lrt.2$ActVsContr,de.tags = detags_ActContr, main = "Gènes DE dans les conditions Activateur contre Contrôle")
+
+up_ActContr=rownames(RNAseq_norm)[as.logical(diffGeneActContr==1)==TRUE]
+down_ActContr=rownames(RNAseq_norm)[as.logical(diffGeneActContr==-1)==TRUE]
+allDE_ActContr=rownames(RNAseq_norm)[as.logical(diffGeneActContr)==TRUE]
+
+t = lrt.2.tables$ActVsContr[allDE_ActContr,]
+geneDiff_ActCtrl =t[order(t$logFC),]
+t = lrt.2.tables$ActVsContr[up_ActContr,]
+geneDiff_UpActCtrl =t[order(t$logFC),]
+#write.table(up_ActContr,"gene_up_ActContr.txt")
+#write.table(down_ActContr,"gene_down_ActContr.txt")
+#write.table(geneDiff_ActCtrl,"all_ActContr_ranked.csv")
+
+```
+Dans les 3219 gènes différentiellement exprimés dans les cellules ayant la forme Activatrice de Shavenbaby comparé aux cellules contr^ôles, il y a 2336 gènes qui sont uprégulés et 883 gènes qui sont downrégulés. 
+
+# Rep VS Contr
+
+```{r echo=FALSE}
+conditions_Rep_Contr=sub('_.',"",colnames(RepVsContr))
+
+conditions_Rep_Contr
+filter=HTSFilter(RepVsContr,conditions_Rep_Contr)
+RepVsContr_filt = filter$filteredData
+RepVsContr_DGE= DGEList(counts = RepVsContr_filt, group = conditions_Rep_Contr)
+RepVsContr_norm = calcNormFactors(RepVsContr_DGE)
+cpm_RepVsContr = cpm(RepVsContr_norm, normalized.lib.sizes = TRUE)
+condit_Rep_Contr = relevel(factor(conditions_Rep_Contr),ref= "Contr")
+design_Rep_Contr = model.matrix(~0+condit_Rep_Contr)
+
+
+dispersionRepVsContr = estimateGLMCommonDisp(RepVsContr_DGE,design_Rep_Contr,verbose = FALSE)
+dispersionRepVsContr = estimateGLMTrendedDisp(dispersionRepVsContr,design_Rep_Contr)
+dispersionRepVsContr = estimateGLMTagwiseDisp(dispersionRepVsContr,design_Rep_Contr)
+
+
+disp_RepVsContr= estimateDisp(RepVsContr_norm,design_Rep_Contr,robust = TRUE)
+disp_RepVsContr$common.dispersion
+sqrt(disp_RepVsContr$common.dispersion)
+
+colnames(design_Rep_Contr) = levels(condit_Rep_Contr)
+fitRepVsContr = glmFit(dispersionRepVsContr,design_Rep_Contr)
+
+RepVsContr_et = exactTest(dispersionRepVsContr)
+resEdgeR=topTags(RepVsContr_et,n=566)
+tab_volcano = data.frame(logFC = lrt.2.tables$RepVsContr$logFC, negLogPval = -log10(lrt.2.tables$RepVsContr$PValue))
+par(mar = c(5, 4, 4, 4))
+plot(tab_volcano, pch = 16, cex = 0.6, xlab = expression(log[2]~fold~change),
+ylab = expression(-log[10]~pvalue), main = "Gènes DE en condition Rep/Ctrl")
+lfc = 1.6
+pval = 0.05
+## Selecting interest genes
+signGenes = (abs(tab_volcano$logFC) > lfc & tab_volcano$negLogPval > -log10(pval))
+## Identifying the selected genes
+points(tab_volcano[signGenes, ], pch = 16, cex = 0.8, col = "red")
+abline(h = -log10(pval), col = "green3", lty = 2)
+abline(v = c(-lfc, lfc), col = "blue", lty = 2)
+mtext(paste("pval =", pval), side = 2, at = -log10(pval), cex = 0.8, line = 0.5, las = 1)
+mtext(c(paste("-", lfc, "fold"), paste("+", lfc, "fold")), side = 3, at = c(-lfc, lfc),
+cex = 0.8, line = 0.5)
+text(7.859161,-log10(6.404763e-66),"svb", pos=3)
+text( -4.037438,-log10(1.534502e-08),"PPO2",pos=3)
+text(-2.83035,-log10(4.355143e-24),"nuf",pos=3)
+text(4.730106,-log10(4.553872e-07),"Amy-p",pos=3)
+text(-2.013023,-log10(1.185641e-07),"MntE",pos=3)
+text(0.1044638,-log10(0.7298396),"Mtn",pos=3)
+summary(diffGeneRepContr <- decideTestsDGE(lrt.2$RepVsContr,lfc = 1.6))
+detags_RepContr=rownames(RNAseq_norm)[as.logical(diffGeneRepContr)]
+plotSmear(lrt.2$RepVsContr,de.tags = detags_RepContr, main = " Gènes DE dans les conditions Répresseur contre Contrôle")
+abline(h = c(-1.6,1.6), col = "blue")
+
+up_RepContr=rownames(RNAseq_norm)[as.logical(diffGeneRepContr==1)==TRUE]
+#write.table(up_RepContr, "gen_up_RepContr.txt")
+
+down_RepContr=rownames(RNAseq_norm)[as.logical(diffGeneRepContr==-1)==TRUE]
+#write.table(down_RepContr, "gene_down_RepContr.txt")
+
+all_RepContr=rownames(RNAseq_norm)[as.logical(diffGeneRepContr)==TRUE]
+#write.table(all_RepContr, "allDE_RepContr.txt")
+
+
+t = lrt.2.tables$RepVsContr[all_RepContr,]
+geneDiff_RepCtrl =t[order(t$logFC),]
+#write.table(geneDiff_RepCtrl, "all_DE_RepCtrl_ranked.csv")
+
+t = lrt.2.tables$RepVsContr[down_RepContr,]
+geneDiff_downRepCtrl =t[order(t$logFC),]
+#write.table(geneDiff_downRepCtrl, "down_DE_RepCtrl_ranked.csv")
+```
+
+#Comparaison 2 à 2 
+
+ActVSCtrl 
+```{r}
+
+et_ACTCTRL = exactTest(RNAseq_norm, pair = c("Contr","Act"), dispersion = dispersion$tagwise.dispersion)
+et_REPCTRL = exactTest(RNAseq_norm, pair = c("Contr","Rep"), dispersion = dispersion$tagwise.dispersion)
+
+et_REPCTRL_order = et_REPCTRL$table[order(et_REPCTRL$table$logFC,decreasing = FALSE),]
+et_ACTCTRL_order = et_ACTCTRL$table[order(et_ACTCTRL$table$logFC, decreasing = TRUE),]
+
+#write.table(et_ACTCTRL_order,"comparaison2a2_ActCTRL.csv")
+#write.table(et_REPCTRL_order, "comparaison2a2_RepCtrl.csv")
+```
+
+
+
+# 18/05/2018 
+# sAffinage des résultats 
+
+Récupère les listes de gènes dans les différentes conditions .
+
+
+## Sans Seuil
+### Pvalue significative
+On utilise uniquement la pvalue pour sélectionner les gènes
+
+```{r echo=FALSE}
+upReg_Act_p = rownames(lrt.2.tables$ActVsContr)[lrt.2.tables$ActVsContr$logFC>0 & lrt.2.tables$ActVsContr$BH.bin == 1 ]
+upReg_Act_tab = lrt.2.tables$ActVsContr[1:4][lrt.2.tables$ActVsContr$logFC>0 & lrt.2.tables$ActVsContr$BH.bin == 1, ]
+upReg_Act_tab$logFC= round(upReg_Act_tab$logFC,2)
+upReg_Act_tab$PValue =round(upReg_Act_tab$PValue,3)
+upReg_Act_tab$logCPM =round(upReg_Act_tab$logCPM,2)
+upReg_Act_tab$Experience = "Act"
+upReg_Act_tab = upReg_Act_tab[,-3]
+
+
+
+downReg_Act_p = rownames(lrt.2.tables$ActVsContr)[lrt.2.tables$ActVsContr$logFC<0 & lrt.2.tables$ActVsContr$BH.bin == 1 ]
+downReg_Act_tab = lrt.2.tables$ActVsContr[1:4][lrt.2.tables$ActVsContr$logFC<0 & lrt.2.tables$ActVsContr$BH.bin == 1, ]
+downReg_Act_tab$logFC= round(downReg_Act_tab$logFC,2)
+downReg_Act_tab$PValue =round(downReg_Act_tab$PValue,3)
+downReg_Act_tab$logCPM =round(downReg_Act_tab$logCPM,2)
+downReg_Act_tab$Experience = "Act"
+downReg_Act_tab = downReg_Act_tab[,-3]
+
+downReg_Rep_p = rownames(lrt.2.tables$RepVsContr)[lrt.2.tables$RepVsContr$logFC<0 & lrt.2.tables$RepVsContr$BH.bin == 1 ]
+downReg_Rep_tab = lrt.2.tables$RepVsContr[,1:4][lrt.2.tables$RepVsContr$logFC<0 & lrt.2.tables$RepVsContr$BH.bin == 1, ]
+downReg_Rep_tab$logFC = round(downReg_Rep_tab$logFC,2)
+downReg_Rep_tab$PValue = round(downReg_Rep_tab$PValue, 3)
+downReg_Rep_tab$logCPM = round(downReg_Rep_tab$logCPM,2)
+downReg_Rep_tab$Experience = "Rep"
+downReg_Rep_tab = downReg_Rep_tab[,-3]
+
+
+upReg_Rep_p = rownames(lrt.2.tables$RepVsContr)[lrt.2.tables$RepVsContr$logFC>0 & lrt.2.tables$RepContr$BH.bin == 1 ]
+upReg_Rep_tab = lrt.2.tables$RepVsContr[,1:4][lrt.2.tables$RepVsContr$logFC>0 & lrt.2.tables$RepVsContr$BH.bin == 1, ]
+upReg_Rep_tab$logFC = round(upReg_Rep_tab$logFC,2)
+upReg_Rep_tab$PValue = round(upReg_Rep_tab$PValue, 3)
+upReg_Rep_tab$logCPM = round(upReg_Rep_tab$logCPM,2)
+upReg_Rep_tab$Experience = "Rep"
+upReg_Rep_tab = upReg_Rep_tab[,-3]
+
+
+not_sign_Act_tab = lrt.2.tables$ActVsContr[,1:4][ lrt.2.tables$ActVsContr$BH.bin == 0, ]
+not_sign_Act_tab$logFC= round(not_sign_Act_tab$logFC,2)
+not_sign_Act_tab$PValue =round(not_sign_Act_tab$PValue,3)
+not_sign_Act_tab$logCPM =round(not_sign_Act_tab$logCPM,2)
+not_sign_Act_tab$Experience = "Act"
+not_sign_Act_tab = not_sign_Act_tab[,-3]
+
+
+not_sign_Rep_tab = lrt.2.tables$RepVsContr[,1:4][ lrt.2.tables$RepVsContr$BH.bin == 0, ]
+not_sign_Rep_tab$logFC= round(not_sign_Rep_tab$logFC,2)
+not_sign_Rep_tab$PValue =round(not_sign_Rep_tab$PValue,3)
+not_sign_Rep_tab$logCPM =round(not_sign_Rep_tab$logCPM,2)
+not_sign_Rep_tab$Experience = "Rep"
+not_sign_Rep_tab = not_sign_Rep_tab[,-3]
+
+
+
+#write.table(upReg_Act_tab , "tab_upact.txt", sep = "\t")
+#write.table(downReg_Rep_tab , "tab_downrep.txt" , sep = "\t")
+
+differential_ActCtrl = lrt.2.tables$ActVsContr[,1:4][ lrt.2.tables$ActVsContr$BH.bin == 1, ]
+differential_ActCtrl$logFC = round(differential_ActCtrl$logFC, 2)
+differential_ActCtrl$PValue = round(differential_ActCtrl$PValue, 2)
+differential_ActCtrl = differential_ActCtrl[,-2:-3]
+differential_ActCtrl_ordre = differential_ActCtrl[order(differential_ActCtrl$logFC, decreasing = TRUE),]
+#write.table(differential_ActCtrl, "tab_act.txt", sep = "\t")
+#write.table(differential_ActCtrl_ordre, "tab_act_ordre.txt", sep = "\t")
+
+differential_RepCtrl = lrt.2.tables$RepVsContr[,1:4][lrt.2.tables$RepVsContr$BH.bin == 1, ]
+differential_RepCtrl$logFC = round(differential_RepCtrl$logFC, 2)
+differential_RepCtrl$PValue = round(differential_RepCtrl$PValue, 2 )
+differential_RepCtrl = differential_RepCtrl[,-2:-3]
+differential_RepCtrl_ordre = differential_RepCtrl[order(differential_RepCtrl$logFC, decreasing = FALSE),]
+differential_RepCtrl_ordre_Act = differential_RepCtrl[rownames(differential_ActCtrl_ordre),]
+#write.table(differential_RepCtrl, "tab_rep.txt", sep= "\t")
+#write.table(differential_RepCtrl_ordre, "tab_rep_ordre.txt", sep = "\t")
+
+differential_ActRep = lrt.2.tables$ActVsRep[,1:4][lrt.2.tables$ActVsRep$BH.bin == 1 , ]
+differential_ActRep$logFC = round(differential_ActRep$logFC,2)
+differential_ActRep$PValue = round(differential_ActRep$PValue, 2)
+differential_ActRep = differential_ActRep[,-2:-3]
+#write.table(differential_ActRep, "tab_act_rep.txt", sep = "\t")
+
+
+binding_gene = read.table("/Volumes/Promise RAID/Work/Alex_analyse/integrationChipseq_RNAseq/gene_binding_svb.txt")
+venn.diagram(
+    x = list( Act = DE_Act_Ctrl_p,
+             Rep = DE_Rep_Ctrl_p),
+   main = "Comparaison Genes DE Act et Rep ",
+   filename = "venndia_DE_ACTREP_p.tiff", cat.pos = c(-10,12) , col = c("green","red"))
+venn.diagram(
+    x = list( upAct = upReg_Act_p,
+             downRep = downReg_Rep_p),
+   main = "Comparaison Genes DE upAct et downRep ",
+   filename = "venndia_DE_upACTdownREP_p.tiff", cat.pos = 12, col = c("green", "red"))
+overlap_commun = calculate.overlap(x = list("upAct" = upReg_Act_p , "downRep" = downReg_Rep_p))
+phyper(length(overlap_commun$a3),length(overlap_commun$a1),nrow(RNAseq)-length(overlap_commun$a1),length(overlap_commun$a2), lower.tail = FALSE)
+
+'%!in%' <- function(x,y)!('%in%'(x,y))
+
+
+
+table_RNAseq_norm = as.data.frame(RNAseq_norm$counts)
+colnames(table_RNAseq_norm) = c("Act_1","Act_2" ,"Rep_1", "Rep_2" , "Ctrl_1", "Ctrl_2")
+gene_faible_Ctrl = rownames(table_RNAseq_norm)[table_RNAseq_norm$Ctrl_1 <= 132 & table_RNAseq_norm$Ctrl_2 <= 136 ]
+upReg_faible = gene_faible_Ctrl[gene_faible_Ctrl%in%upReg_Act_p]
+ 
+
+venn.diagram(
+    x = list( upAct = upReg_Act_p,
+             Ctrl_faible = gene_faible_Ctrl),
+   main = "Comparaison Genes DE upAct faible en contrôle  ",
+   filename = "venndia_DE_faible.tiff", cat.pos = c(-10, 50), col = c("green", "purple"))
+
+venn.diagram(
+    x = list( upAct_faible = upReg_faible,
+             binding = binding_gene$x),
+   main = "Comparaison Genes DE upAct faible en contrôle et binding ",
+   filename = "venndia_DE_faible_binding.tiff" , cat.cex = 1 ,cat.pos = c(-10, 50))
+
+upReg_faible_bind = upReg_faible[upReg_faible%in%binding_gene$x]
+
+venn.diagram(
+    x = list( upAct_bind_faible = upReg_faible_bind,
+             downRep = downReg_Rep_p),
+   main = "Comparaison Genes DE upAct faible controle et binding et downRep ",
+   filename = "venndia_DE_upACTdownREP_binding_faible.tiff", cat.pos = 12 , col = c("green","blue"))
+
+
+#Tableau pour les 2 expériences en présence de Act et Rep 
+
+tab_final = read.table("/Volumes/Promise RAID/Work/Alex_analyse/RNASEQ/RNASEQ/script/DEList/tab_final_ordre.txt" , header = TRUE)
+#tab_final$negpvalue = -log10(tab_final$pvalue)
+#tab_final$gene = factor(tab_final$gene)
+#ggplot(tab_final , aes(gene,logFC, fill = logFC)) + geom_bar(stat = "identity" , position ="dodge" ) +coord_flip()  + scale_fill_gradientn(colours = rainbow(6)) + theme_minimal() + facet_wrap(~Experience)
+
+```
+# Volcano UpAct et DownRep 
+
+```{r}
+#lfc = 1.6
+par(mar = c(5,4,4,4))
+#faire les sous groupes
+not_signifiant = subset(tab_final ,tab_final$logFC < 1.6  & tab_final$negpvalue <= -log10(pval) | tab_final$logFC > -1.6 & tab_final$negpvalue <= -log10(pval) | -1.6 < tab_final$logFC & tab_final$logFC < 1.6 ) 
+rep.down = subset(tab_final, tab_final$logFC < -1.6 & tab_final$negpvalue > -log10(pval) & tab_final$Experience == "Rep")
+rep.up = subset(tab_final, tab_final$logFC > 1.6 & tab_final$negpvalue > -log10(pval) & tab_final$Experience == "Rep" )
+act.up = subset(tab_final, tab_final$logFC > 1.6 & tab_final$negpvalue > -log10(pval) & tab_final$Experience == "Act")
+act.down = subset(tab_final, tab_final$logFC < - 1.6 & tab_final$negpvalue > -log10(pval) & tab_final$Experience == "Act")
+plot(tab_final$logFC,tab_final$negpvalue, pch = 16, cex = 0.6, xlab = expression(log[2]~fold~change),ylab = expression(-log[10]~pvalue), main = "Gènes upAct et DownRep",col = "white")
+
+with(subset(rep.down), points(rep.down$logFC, rep.down$negpvalue, pch=16, cex=0.8, col="red"))
+with(subset(not_signifiant), points(not_signifiant$logFC, not_signifiant$negpvalue, pch=16, cex=0.8, col="grey70"))
+with(subset(act.up), points(act.up$logFC, act.up$negpvalue, pch=16, cex=0.8, col="green"))
+
+
+abline(h = -log10(pval), col = "green3", lty = 2)
+#abline(v = c(-lfc, lfc), col = "blue", lty = 2)
+```
+
+# Comparaison avec binding gene
+```{r}
+venn.diagram(
+    x = list( Act = DE_Act_Ctrl_p,
+             Binding = binding_gene$x),
+   main = "Comparaison Genes UpAct et binding ",
+   filename = "venndia_DE_ACTBinding_pvalue.tiff", cat.pos = c(-10,12) , col = c("green","blue"))
+
+
+venn.diagram(
+    x = list( upAct = upReg_Act_p,
+             Binding = binding_gene$x),
+   main = "Comparaison Genes DE upAct et Binding ",
+   filename = "venndia_DE_upACT_binding_p.tiff", cat.pos = 12, col = c("green", "blue"))
+bind_Act = upReg_Act_p[upReg_Act_p%in%binding_gene$x==TRUE]
+binding_ACT = read.table("GeneDirect_Act_pvalue_coord.bed.txt", sep ='\t', header = T)
+bind_Act[bind_Act%in%binding_ACT$Gene.name == F]
+overlap_commun = calculate.overlap(x = list("upAct" = upReg_Act_p , "binding" = binding_gene$x))
+phyper(length(overlap_commun$a3),length(overlap_commun$a1),nrow(RNAseq)-length(overlap_commun$a1),length(overlap_commun$a2), lower.tail = FALSE)
+
+venn.diagram(
+    x = list( downRep = downReg_Rep_p,
+             binding = binding_gene$x),
+   main = "Comparaison Genes DE downRep et binding ",
+   filename = "venndia_DE_RepBinding_pvalue.tiff", cat.pos = 12, col = c("red", "blue"))
+
+overlap_commun = calculate.overlap(x = list("downRep" = downReg_Rep_p , "binding" = binding_gene$x))
+phyper(length(overlap_commun$a3),length(overlap_commun$a1),nrow(RNAseq)-length(overlap_commun$a1),length(overlap_commun$a2), lower.tail = FALSE)
+
+```
+# volcano que pvalue 
+
+```{r}
+
+tab_volcano_pval = data.frame(logFC = lrt.2.tables$ActVsContr$logFC, negLogPval = -log10(lrt.2.tables$ActVsContr$PValue))
+head(tab_volcano_pval)
+par(mar = c(5, 4, 4, 4))
+plot(tab_volcano_pval, pch = 16, cex = 0.6, xlab = expression(log[2]~fold~change),ylab = expression(-log[10]~pvalue), main = "Gènes DE Act/Ctrl", ylog = T)
+
+pval = 0.05
+
+## Selecting interest genes
+signGenes = ( tab_volcano_pval$negLogPval > -log10(pval))
+## Identifying the selected genes
+points(tab_volcano_pval[signGenes, ], pch = 16, cex = 0.6, col = "darkgreen")
+abline(h = -log10(pval), col = "blue", lty = 2)
+mtext(paste("pval =", pval), side = 4, at = -log10(pval), cex = 0.8, line = 0.5, las = 1)
+text(lrt.2.tables$ActVsContr$logFC[rownames(lrt.2.tables$ActVsContr) == "Mrp4"],-log10(lrt.2.tables$ActVsContr$PValue)[rownames(lrt.2.tables$ActVsContr) == "Mrp4"],"Mrp4",pos=3)
+text(lrt.2.tables$ActVsContr$logFC[rownames(lrt.2.tables$ActVsContr) == "CR44833"],-log10(lrt.2.tables$ActVsContr$PValue)[rownames(lrt.2.tables$ActVsContr) == "CR44833"],"lncRNA:CR44833",pos=3)
+
+tab_volcano_pval_rep = data.frame(logFC = lrt.2.tables$RepVsContr$logFC, negLogPval = -log10(lrt.2.tables$RepVsContr$PValue))
+head(tab_volcano_pval_rep)
+par(mar = c(5, 4, 4, 4))
+plot(tab_volcano_pval_rep, pch = 16, cex = 0.6, xlab = expression(log[2]~fold~change),ylab = expression(-log[10]~pvalue), main = "Gènes DE Rep/Ctrl", ylog = T)
+
+pval = 0.05
+
+## Selecting interest genes
+signGenes_rep = ( tab_volcano_pval_rep$negLogPval > -log10(pval))
+## Identifying the selected genes
+points(tab_volcano_pval_rep[signGenes_rep, ], pch = 16, cex = 0.6, col = "red")
+abline(h = -log10(pval), col = "blue", lty = 2)
+mtext(paste("pval =", pval), side = 4, at = -log10(pval), cex = 0.8, line = 0.5, las = 1)
+
+text(7.859161,65.1935,"svb", pos=1)
+text( 0.3277,0.6141102,"m",pos=3)
+text(-0.138038,0.1041129,"piwi",pos=3)
+text(lrt.2.tables$RepVsContr$logFC[rownames(lrt.2.tables$RepVsContr) == "dpr7"],-log10(lrt.2.tables$RepVsContr$PValue)[rownames(lrt.2.tables$RepVsContr) == "dpr7"],"dpr7",pos=3)
+
+
+tab_volcano_pval_actrep = data.frame(logFC = lrt.2.tables$ActVsRep$logFC, negLogPval = -log10(lrt.2.tables$ActVsRep$PValue))
+head(tab_volcano_pval_rep)
+par(mar = c(5, 4, 4, 4))
+plot(tab_volcano_pval_actrep, pch = 16, cex = 0.6, xlab = expression(log[2]~fold~change),ylab = expression(-log[10]~pvalue), main = "Gènes DE Act/Rep", ylog = T)
+
+pval = 0.05
+
+## Selecting interest genes0000
+signGenes_actrep = ( tab_volcano_pval_actrep$negLogPval > -log10(pval))
+## Identifying the selected genes
+points(tab_volcano_pval_actrep[signGenes_actrep, ], pch = 16, cex = 0.6, col = "blue")
+abline(h = -log10(pval), col = "blue", lty = 2)
+
+
+```
+
+
+
+
+#Obtention du graphique de comparaison des données logFC pour Act et Rep
+```{r}
+binding_gene = read.table("/Volumes/Promise RAID/Work/Alex_analyse/integrationChipseq_RNAseq/gene_binding_svb.txt")
+ordre = as.character(tab_final$gene)
+Binding = tab_final[tab_final$gene%in%binding_gene$x,]
+Act_Binding = Binding[Binding$Experience == "Act",]
+upAct_Binding = Act_Binding[Act_Binding$logFC > 0 , ]
+Rep_Binding = Binding[Binding$Experience == "Rep",]
+downRep_Binding = Rep_Binding[Rep_Binding$logFC < 0 , ]
+rpkm = read.csv("/Volumes/Promise RAID/Work/Alex_analyse/RNASEQ/RNASEQ/script/RNA_rpkm.csv")
+rownames(rpkm) = rpkm$X
+rpkm = rpkm[,6:7]
+rpkm$Ctrl = apply(rpkm,1, mean)
+tab_final %>%
+       mutate(name = factor(gene , levels = ordre)) %>%
+        ggplot( aes(name, logFC, fill = logFC)) +
+        geom_bar(stat="identity", position = "dodge") +
+        scale_fill_gradientn(name = "logFC",colours =  c("purple","blue","grey70", "yellow", "orange","red"),limits = c(-5, 8)) +
+        facet_wrap(~Experience)  +
+        coord_flip()
+#ggsave("all_ranked_compared_genes.jpeg")
+
+
+data = tab_final[1:100,]
+data %>%
+       mutate(name = factor(gene , levels = ordre)) %>%
+        ggplot( aes(name, logFC, fill = logFC)) +
+        geom_bar(stat="identity", position = "dodge") +
+        scale_fill_gradientn(name = "logFC",colours =  c("purple","blue","grey70", "yellow", "orange","red"),limits = c(-5, 8)) +
+        facet_wrap(~Experience)  +
+        coord_flip()
+
+#ggplot(tab_final[1:100,], aes(pvalue, gene)) + geom_line(aes(group = gene))  + geom_point(aes(color = Experience))
+
+#Obtention du graphique de comparaison des données logFC pour Act et Rep pour tous les 100 gènes
+test = seq(1,nrow(tab_final),50)
+pas = seq(1,length(test)-1,1)
+for (i in pas){
+
+
+    d = paste('graph', test[i] , test[i+1]-1, sep = "_")
+    name_file = paste(d,"jpeg" , sep = ".")
+    subtitle = paste( "(", test[i] ,"-",  test[i+1]-1  ,")", sep = " " )
+    data = tab_final[test[i]:(test[i+1]-1),]
+    #print(test[i])
+    data %>%
+       mutate(name = factor(gene , levels = ordre)) %>%
+         ggplot( aes(name, logFC, fill = logFC)) +
+         geom_bar(stat="identity", position = "dodge") +
+         scale_fill_gradientn(name = "logFC",colours = c("purple","skyblue","grey70", "yellow", "orange","red"),limits = c(-5, 9)) +
+         facet_wrap(~Experience)  +
+         coord_flip(ylim = c(-5, 9)) +
+         labs(title ="Comparaison des gènes en fonction de leur logFC en présence de SvbACT ou SvbREP" , subtitle = subtitle)+
+         theme_hc() +
+         theme(plot.title = element_text(color="black", size=10, face="bold"),legend.position = "right")
+    ggsave(name_file, device = "jpeg")
+    if (i == length(pas)){
+      d = paste('graph', test[i] , nrow(tab_final), sep = "_")
+      subtitle = paste(" (", test[i] ,"-", nrow(tab_final) , ")" , sep = " " )
+      name_file = paste(d,"jpeg" , sep = ".")
+
+      data = tab_final[test[i]:nrow(tab_final),]
+      data %>%
+       mutate(name = factor(gene , levels = ordre)) %>%
+         ggplot( aes(name, logFC, fill = logFC)) +
+         geom_bar(stat="identity", position = "dodge") +
+         scale_fill_gradientn(name = "logFC",colours = c("purple","skyblue","grey70", "yellow", "orange","red"),limits = c(-5, 9)) +
+         facet_wrap(~Experience)  +
+         coord_flip(ylim = c(-5, 9))+
+         labs(title = "Comparaison des gènes en fonction de leur logFC en présence de SvbACT ou SvbREP" , subtitle = subtitle) +
+         theme_hc() +
+         theme(plot.title = element_text(color="black", size=10, face="bold"),legend.position = "right")
+      #ggsave(name_file, device = "jpeg")
+    }
+ }
+``` 
+# Obtention du Graphique de Cleveland pour les données 
+
+
+```{r}
+data = tab_final[1:100,]
+ tab_final %>%
+   mutate(name = factor(gene , levels = ordre)) %>%
+   ggplot(aes(name,logFC)) + geom_line(aes(group = name)) +
+   geom_point(aes(color = Experience)) + labs(title = " Comparaison des gènes en fonction de leur logFC en présences de SvbACT ou SvbREP") +
+   theme(plot.title = element_text(color = "black", size = 10 , face = "bold"), legend.position = "right") + coord_flip() +
+   theme_hc()+ scale_color_manual(values = c("red", "green"), labels = c("Act", "Rep")) 
+ #ggsave("cleveland_plot_allgene.jpeg")
+
+test = seq(1,nrow(tab_final),100)
+pas = seq(1,length(test)-1,1)
+for (i in pas){
+
+
+    d = paste('cleveland_graph', test[i] , test[i+1]-1, sep = "_")
+    name_file = paste(d,"jpeg" , sep = ".")
+    subtitle = paste( "(", test[i] ,"-",  test[i+1]-1  ,")", sep = " " )
+    data = tab_final[test[i]:(test[i+1]-1),]
+    #print(test[i])
+    data %>%
+      mutate(name = factor(gene , levels = ordre)) %>%
+      ggplot(aes(name,logFC)) + geom_line(aes(group = name)) +
+      geom_point(aes(color = Experience)) +
+      labs(title ="Comparaison des gènes en fonction de leur logFC en présence de SvbACT ou SvbREP" , subtitle = subtitle)+
+      theme_hc() +
+      theme(plot.title = element_text(color="black", size=10, face="bold"),legend.position = "right") +
+      coord_flip(ylim = c(-5,9)) + scale_color_manual(values = c("red", "green"), labels = c("Act/Ctrl", "Rep/Ctrl"))
+    ggsave(name_file, device = "jpeg")
+    if (i == length(pas)){
+      d = paste('cleveland_graph', test[i] , nrow(tab_final), sep = "_")
+      subtitle = paste(" (", test[i] ,"-", nrow(tab_final) , ")" , sep = " " )
+      name_file = paste(d,"jpeg" , sep = ".")
+
+      data = tab_final[test[i]:nrow(tab_final),]
+      data %>%
+      mutate(name = factor(gene , levels = ordre)) %>%
+      ggplot(aes(name,logFC)) + geom_line(aes(group = name)) +
+      geom_point(aes(color = Experience)) +
+      labs(title ="Comparaison des gènes en fonction de leur logFC en présence de SvbACT ou SvbREP" , subtitle = subtitle)+
+      theme_hc() +
+      theme(plot.title = element_text(color="black", size=10, face="bold"),legend.position = "right") + coord_flip(ylim = c(-5,9)) + scale_color_manual(values = c("red", "green"), labels = c("Act", "Rep"))
+      #ggsave(name_file, device = "jpeg")
+    }
+ }
+```
+
+#Cleveland plot avec les gènes et la différence de logFC 
+```{r}
+lignes_Rep = tab_final[seq(2, nrow(tab_final), 2),]
+lignes_Act = tab_final[seq(1, nrow(tab_final), 2),]
+pas_diff = seq(1, nrow(lignes_Act))
+
+
+for (i in pas_diff){
+      if ( lignes_Act$gene[i] == lignes_Rep$gene[i]){
+          lignes_Act$diff[i] = lignes_Act$logFC[i] - lignes_Rep$logFC[i]  
+          lignes_Rep$diff[i] = "NA" } }
+
+tab_diff = rbind(lignes_Act , lignes_Rep)
+tab_diff_order = tab_diff[order(tab_diff$gene),]
+tab_diff_order$diff = as.numeric(tab_diff_order$diff)
+right_label <- tab_diff_order %>%
+        group_by(gene) %>%
+        arrange((diff)) %>%
+        top_n(1)
+
+tab_diff_order %>%
+        ggplot(aes(gene,logFC)) + geom_line(aes(group = gene)) +
+        geom_point(aes(color = Experience, label = diff)) + labs(title = " Comparaison des gènes en fonction de leur logFC en présences de SvbACT ou SvbREP")+ 
+        theme(plot.title = element_text(color = "black", size = 10 , face = "bold"), legend.position = "right") + coord_flip() +
+        theme_hc()+ scale_color_manual(values = c("red", "green"), labels = c("Act/Ctrl", "Rep/Ctrl")) +geom_text(aes(label = diff , vjust = -0.5 ),label.size = 5, position = "identity")
+
+
+test = seq(1,nrow(tab_final),50)
+pas = seq(1,length(test)-1,1)
+for (i in pas){
+
+
+    
+    d = paste('cleveland_graph_diff',test[i] , test[i + 1] - 1, sep = "_")
+    name_file = paste(d,"jpeg" , sep = ".")
+    subtitle = paste( "(", test[i],"-", test[i +1] -1  ,")", sep = " " )
+    data = tab_diff_order[test[i]:(test[i+1] - 1),]
+
+    data %>%
+      ggplot(aes(logFC,gene)) + geom_line(aes(group = gene)) +
+        geom_point(aes(color = Experience, label = diff)) + labs(title = " Comparaison des gènes en fonction de leur logFC en présences de SvbACT ou SvbREP")+
+        theme(plot.title = element_text(color = "black", size = 10 , face = "bold"), legend.position = "right") +
+        theme_hc()+ scale_color_manual(values = c("red", "green"), labels = c("Act/Ctrl", "Rep/Ctrl")) +geom_text(aes(label = diff , vjust = -0.5), size = 3 , position = "identity")
+    ggsave(name_file, device = "jpeg")
+    if (i == length(pas)){
+      d = paste('cleveland_graph_diff', test[i] , nrow(tab_final), sep = "_")
+      subtitle = paste(" (", test[i] ,"-", nrow(tab_final) , ")" , sep = " " )
+      name_file = paste(d,"jpeg" , sep = ".")
+
+      data = tab_diff_order[test[i]:nrow(tab_final),]
+      data %>%
+      ggplot(aes(logFC,gene)) + geom_line(aes(group = gene)) +
+        geom_point(aes(color = Experience, label = diff)) + labs(title = " Comparaison des gènes en fonction de leur logFC en présences de SvbACT ou SvbREP")+
+        theme(plot.title = element_text(color = "black", size = 10 , face = "bold"), legend.position = "right") +
+        theme_hc()+ scale_color_manual(values = c("red", "green"), labels = c("Act/Ctrl", "Rep/Ctrl")) +geom_text(aes(label = diff , vjust = -0.5, position = "identity"))
+     # ggsave(name_file, device = "jpeg")
+    }
+ }
+
+
+
+
+
+
+```
+
+
+##Ordonner le graph en fonction de la difference de logFC 
+
+```{r}
+ordre_diff = lignes_Act[order(-lignes_Act$diff),]
+ordre_vect = rep(ordre_diff$gene ,each = 2)
+ordre_vect = as.character(ordre_vect)
+test = seq(1,nrow(tab_final),50)
+pas = seq(1,length(test)-1,1)
+bre = seq(from = (-5), to = 9 , by = 1)
+for (i in pas){
+
+    d = paste('cleveland_graph_order',test[i] , test[i + 1] - 1, sep = "_")
+    name_file = paste(d,"jpeg" , sep = ".")
+    subtitle = paste( "(", test[i],"-", test[i +1] -1  ,")", sep = " " )
+    data = tab_diff_order[test[i]:(test[i+1] - 1),]
+
+    data %>%
+     mutate(name = factor(gene , levels = ordre_vect)) %>% 
+        ggplot(aes(name,logFC)) + 
+        geom_line(aes(group = name)) +
+        geom_point(aes(color = Experience, label = diff)) +
+        labs(title = " Comparaison des gènes en fonction de leur logFC en présences de SvbACT ou SvbREP") +
+        theme(plot.title = element_text(color = "black", size = 10 , face = "bold"), legend.position = "right") +
+        theme_hc() +
+        scale_color_manual(values = c("red", "green"), labels = c("Act", "Rep")) +
+        geom_text(aes(label = diff , vjust = -0.5), size = 3 , position = "identity") + 
+        coord_flip(ylim = c(-5, 9) ) +
+      scale_y_continuous(breaks = bre) +
+      geom_hline(yintercept = 0,linetype="dashed",color = "purple") + 
+    ggsave(name_file, device = "jpeg")
+    if (i == length(pas)){
+      d = paste('cleveland_graph_order', test[i] , nrow(tab_final), sep = "_")
+      subtitle = paste(" (", test[i] ,"-", nrow(tab_final) , ")" , sep = " " )
+      name_file = paste(d,"jpeg" , sep = ".")
+
+      data = tab_diff_order[test[i]:nrow(tab_diff_order),]
+      data %>%
+        mutate(name = factor(gene , levels = ordre_vect)) %>% 
+        ggplot(aes(name,logFC)) + 
+        geom_line(aes(group = name)) +
+        geom_point(aes(color = Experience, label = diff)) + 
+        labs(title = " Comparaison des gènes en fonction de leur logFC en présences de SvbACT ou SvbREP") +
+        theme(plot.title = element_text(color = "black", size = 10 , face = "bold"), legend.position = "right") +
+        theme_hc() + 
+        scale_color_manual(values = c("red", "green"), labels = c("Act", "Rep")) +
+        geom_text(aes(label = diff , vjust = -0.5, position = "identity")) + 
+        coord_flip(ylim = c(-5, 9)) +
+        geom_hline(yintercept = 0,linetype="dashed",color = "purple") + 
+        scale_y_continuous(breaks = bre)
+      #ggsave(name_file, device = "jpeg")
+    }
+ }
+```
+
+
+
+#11/10/2018
+#Rajout des données ACT/REP   
+
+```{r}
+tab_act_rep = read.table("tab_final_actrep_final.txt", header = TRUE)
+
+
+tab_act_rep$negpvalue = -log10(tab_act_rep$pvalue)
+tab_act_rep$gene = factor(tab_act_rep$gene)
+tab_act_rep_order = tab_act_rep[order(tab_act_rep$logFC),]
+ggplot(tab_act_rep_order , aes(gene,logFC, fill = logFC)) + geom_bar(stat = "identity" , position ="dodge" ) +coord_flip()  + scale_fill_gradientn(colours = rainbow(6)) + theme_minimal() + facet_wrap(~Experience)
+ordre = as.character(tab_final$gene)
+tab_act_rep %>%
+       mutate(name = factor(gene , levels = ordre)) %>%
+        ggplot( aes(name, logFC,fill = logFC)) +
+        geom_bar(stat="identity", position = "dodge") +
+        scale_fill_gradientn(name = "logFC",colours = c("purple","skyblue","grey70", "yellow", "orange","red"),limits = c(-5, 9)) +
+        facet_wrap(~Experience)  +
+        coord_flip(ylim = c(-5, 9)) +
+        labs(title ="Comparaison des gènes en fonction de leur logFC en présence de SvbACT ou SvbREP" , subtitle = subtitle)+
+        theme_hc() +
+        theme(plot.title = element_text(color="black", size=10, face="bold"),legend.position = "right")
+
+
+
+test = seq(1,nrow(tab_act_rep),100)
+pas = seq(1,length(test)-1,1)
+for (i in pas){
+
+
+    d = paste('graph_act_rep', test[i] , test[i+1]-1, sep = "_")
+    name_file = paste(d,"jpeg" , sep = ".")
+    subtitle = paste( "(", test[i] ,"-",  test[i+1]-1  ,")", sep = " " )
+    data = tab_act_rep_order[test[i]:(test[i+1]-1),]
+    #print(test[i])
+    data %>%
+       mutate(name = factor(gene , levels = ordre)) %>%
+         ggplot( aes(gene, logFC, fill = logFC)) +
+         geom_bar(stat="identity", position = "dodge") +
+         scale_fill_gradientn(name = "logFC",colours = c("purple","skyblue","grey70", "yellow", "orange","red"),limits = c(-5, 9)) +
+         facet_wrap(~Experience)  +
+         coord_flip(ylim = c(-5, 9)) +
+         labs(title ="Comparaison des gènes en fonction de leur logFC en présence de SvbACT ou SvbREP" , subtitle = subtitle)+
+         theme_hc() +
+         theme(plot.title = element_text(color="black", size=10, face="bold"),legend.position = "right")
+    ggsave(name_file, device = "jpeg")
+    if (i == length(pas)){
+      d = paste('graph_act_rep', test[i] , nrow(tab_act_rep_order), sep = "_")
+      subtitle = paste(" (", test[i] ,"-", nrow(tab_act_rep_order) , ")" , sep = " " )
+      name_file = paste(d,"jpeg" , sep = ".")
+
+      data = tab_act_rep_order[test[i]:nrow(tab_act_rep_order),]
+      data %>%
+       mutate(name = factor(gene , levels = ordre)) %>%
+         ggplot( aes(name, logFC, fill = logFC)) +
+         geom_bar(stat="identity", position = "dodge") +
+         scale_fill_gradientn(name = "logFC",colours = c("purple","skyblue","grey70", "yellow", "orange","red"),limits = c(-5, 9)) +
+         facet_wrap(~Experience)  +
+         coord_flip(ylim = c(-5, 9))+
+         labs(title = "Comparaison des gènes en fonction de leur logFC en présence de SvbACT ou SvbREP" , subtitle = subtitle) +
+         theme_hc() +
+         theme(plot.title = element_text(color="black", size=10, face="bold"),legend.position = "right")
+      ggsave(name_file, device = "jpeg")
+    }
+ }
+```
+
+#Gene upReg et DownRep et rpkm 
+```{r}
+#write.table(upact_dowRep_rpkm, "geneUpAct_DownRep_rpkm_nonsign.txt", row.names = upact_dowRep_rpkm$gene)
+
+upact_dowRep_rpkm_sign = read.table("/Volumes/Promise\ RAID/Work/Alex_analyse/RNASEQ/RNASEQ/script/geneUpAct_DownRep_rpkm.tkt", header = TRUE)
+plot(upact_dowRep_rpkm_sign$rpkm,upact_dowRep_rpkm_sign$logFC_rep)
+plot(upact_dowRep_rpkm_sign$rpkm,upact_dowRep_rpkm_sign$logFC_rep , xlim = c(0,2000), xlab = "Gene Expression on Ctrl" , ylab = "logFC on SvbREP",pch = 20)
+plot(upact_dowRep_rpkm_sign$rpkm,upact_dowRep_rpkm_sign$logFC_rep , xlim = c(0,500),xlab = "Gene Expression on Ctrl" , ylab = "logFC on SvbREP",pch = 20)
+plot(upact_dowRep_rpkm_sign$rpkm,upact_dowRep_rpkm_sign$logFC_rep , xlim = c(0,38),xlab = "Gene Expression on Ctrl" , ylab = "logFC on SvbREP", pch = 20)
+#We use 38 to threshold it's the thresolld using to filter gene which are not express
+tab_act_rep_rpkm_38 = upact_dowRep_rpkm_sign[upact_dowRep_rpkm_sign$rpkm>=38,]
+#We use 0.75 to threshold because it'ds the threshold use on past experiment to have biological target 
+rep0.75 = tab_act_rep_rpkm_38[tab_act_rep_rpkm_38$logFC_rep <= -0.75,]
+rep_0.5 = tab_act_rep_rpkm_38[tab_act_rep_rpkm_38$logFC_rep <= -0.5,]
+act_1.6_rep0.75 = rep0.75[rep0.75$logFC_act >= 1.6,]
+
+```
+
+#Conclusions
+
+Les gènes upAct sont différents des gènes downRep car les gènes sont trpo faiblement exprimé dans les Contrôle. 
+On ne peut pas dire que les gènes soient downRep véritablement car les logFC sont trop faible de plus les variations que l'on voit sont dû à un niveau faible d'expression dans les contrôles. Seuls quelques gènes sont downRep avec un niveau fort d'expression dans les Controle. 
+
+
+
+#ANNEXE 
+
+Si on prend tous les gènes même ceux dont la pvalue est non significatives 
+
+```{r}
+upact_dowRep_rpkm = read.table("geneUpAct_DownRep_rpkm_nosignpval.tkt",header = TRUE)
+tab_final_actrep_final_nosign= read.table("tab_final_actrep_final_nosign.txt" , header = TRUE)
+
+pval_tab = lrt.2.tables$ActVsContr[order(lrt.2.tables$ActVsContr$logFC),]
+pval_tab$logFC = round(pval_tab$logFC, digits = 1)
+head(pval_tab)
+pval_tab$PValue = as.numeric(format(pval_tab$PValue, digits = 1))
+pval_tab$negLogPval = -log10(pval_tab$PValue)
+#pval_tab$logFC =as.factor(pval_tab$logFC)
+pval_tab = pval_tab[,-2:-3]
+pval_tab = pval_tab[,-3:-7]
+pval_tab$gene_name = rownames(pval_tab)
+#write.table(pval_tab , "tab_act_nosign.txt")
+
+ggdotchart(pval_tab , x = "gene_name" , y = "PValue" ,color  = "logFC", add = "segments",rotate = TRUE  , palette = "spectral",legend = "right")
+
+rep_tab = lrt.2.tables$RepVsContr
+rep_tab$PValue = as.numeric(format(rep_tab$PValue, digits = 1))
+rep_tab$logFC = round(rep_tab$logFC,digits = 1)
+rep_tab = rep_tab[,-2:-3]
+rep_tab = rep_tab[,-3:-7]
+#rep_tab$logFC = as.factor(rep_tab$logFC)
+rep_tab$gene_name= rownames(rep_tab)
+head(rep_tab)
+
+#write.table(rep_tab, "tab_repnosign.txt")
+
+
+Act_Rep_tab = lrt.2.tables$ActVsRep
+Act_Rep_tab$PValue = as.numeric(format(Act_Rep_tab$PValue, digits = 1))
+Act_Rep_tab$logFC = round(Act_Rep_tab$logFC , digits = 1)
+Act_Rep_tab = Act_Rep_tab[,-2:-3]
+Act_Rep_tab = Act_Rep_tab[,-3:-7]
+write.table(Act_Rep_tab , "tab_actrepnosign.txt" , sep = "\t")
+upact_dowRep_rpkm = read.table("tab_final_actrep_final_nosign.txt" , header = TRUE)
+
+plot(upact_dowRep_rpkm_$rpkm,upact_dowRep_rpkm_$logFC_rep)
+plot(upact_dowRep_rpkm_$rpkm,upact_dowRep_rpkm_$logFC_rep , xlim = c(0,2000), xlab = "Gene Expression on Ctrl" , ylab = "logFC on SvbREP")
+plot(upact_dowRep_rpkm_$rpkm,upact_dowRep_rpkm_$logFC_rep , xlim = c(0,500),xlab = "Gene Expression on Ctrl" , ylab = "logFC on SvbREP")
+plot(upact_dowRep_rpkm_$rpkm,upact_dowRep_rpkm_$logFC_rep , xlim = c(0,38),xlab = "Gene Expression on Ctrl" , ylab = "logFC on SvbREP")
+#We use 38 to threshold it's the thresolld using to filter gene which are not express
+tab_act_rep_rpkm_38 = upact_dowRep_rpkm_[upact_dowRep_rpkm_$rpkm>=38,]
+#We use 0.75 to threshold because it'ds the threshold use on past experiment to have biological target 
+rep0.75 = tab_act_rep_rpkm_38[tab_act_rep_rpkm_38$logFC_rep <= -0.75,]
+rep_0.5 = tab_act_rep_rpkm_38[tab_act_rep_rpkm_38$logFC_rep <= -0.5,]
+act_1.6_rep0.75 = rep0.75[rep0.75$logFC_act >= 1.6,]
+
+#Tableau pour les 2 expériences en présence de Act et Rep 
+
+tab_final = read.table("tab_final_actrep_final_nosign.txt" , header = TRUE)
+tab_final$negpvalue = -log10(tab_final$pvalue)
+tab_final$gene = factor(tab_final$gene)
+ggplot(tab_final , aes(gene,negpvalue, fill = logFC)) + geom_bar(stat = "identity" , position ="dodge" ) +coord_flip()  + scale_fill_gradientn(colours = rainbow(6)) + theme_minimal() + facet_wrap(~Experience)
+
+```
+
+
+#Obtention du graphique de comparaison des données logFC pour Act et Rep
+```{r}
+binding_gene = read.table("/Volumes/Promise RAID/Work/Alex_analyse/integrationChipseq_RNAseq/gene_binding_svb.txt")
+ordre = as.character(tab_final$gene)
+Binding = tab_final[tab_final$gene%in%binding_gene$x,]
+Act_Binding = Binding[Binding$Experience == "Act",]
+upAct_Binding = Act_Binding[Act_Binding$logFC > 0 , ]
+Rep_Binding = Binding[Binding$Experience == "Rep",]
+downRep_Binding = Rep_Binding[Rep_Binding$logFC < 0 , ]
+rpkm = read.csv("/Volumes/Promise RAID/Work/Alex_analyse/RNASEQ/RNASEQ/script/RNA_rpkm.csv")
+rownames(rpkm) = rpkm$X
+rpkm = rpkm[,6:7]
+rpkm$Ctrl = apply(rpkm,1, mean)
+tab_final %>%
+       mutate(name = factor(gene , levels = ordre)) %>%
+        ggplot( aes(name, logFC, fill = logFC)) +
+        geom_bar(stat="identity", position = "dodge") +
+        scale_fill_gradientn(name = "logFC",colours =  c("purple","blue","grey70", "yellow", "orange","red"),limits = c(-5, 8)) +
+        facet_wrap(~Experience)  +
+        coord_flip()
+#ggsave("all_ranked_compared_genes.jpeg")
+
+
+data = tab_final[1:100,]
+data %>%
+       mutate(name = factor(gene , levels = ordre)) %>%
+        ggplot( aes(name, logFC, fill = logFC)) +
+        geom_bar(stat="identity", position = "dodge") +
+        scale_fill_gradientn(name = "logFC",colours =  c("purple","blue","grey70", "yellow", "orange","red"),limits = c(-5, 8)) +
+        facet_wrap(~Experience)  +
+        coord_flip()
+
+#ggplot(tab_final[1:100,], aes(pvalue, gene)) + geom_line(aes(group = gene))  + geom_point(aes(color = Experience))
+
+#Obtention du graphique de comparaison des données logFC pour Act et Rep pour tous les 100 gènes
+test = seq(1,nrow(tab_final),50)
+pas = seq(1,length(test)-1,1)
+for (i in pas){
+
+
+    d = paste('graph', test[i] , test[i+1]-1, sep = "_")
+    name_file = paste(d,"jpeg" , sep = ".")
+    subtitle = paste( "(", test[i] ,"-",  test[i+1]-1  ,")", sep = " " )
+    data = tab_final[test[i]:(test[i+1]-1),]
+    #print(test[i])
+    data %>%
+       mutate(name = factor(gene , levels = ordre)) %>%
+         ggplot( aes(name, logFC, fill = logFC)) +
+         geom_bar(stat="identity", position = "dodge") +
+         scale_fill_gradientn(name = "logFC",colours = c("purple","skyblue","grey70", "yellow", "orange","red"),limits = c(-5, 9)) +
+         facet_wrap(~Experience)  +
+         coord_flip(ylim = c(-5, 9)) +
+         labs(title ="Comparaison des gènes en fonction de leur logFC en présence de SvbACT ou SvbREP" , subtitle = subtitle)+
+         theme_hc() +
+         theme(plot.title = element_text(color="black", size=10, face="bold"),legend.position = "right")
+    ggsave(name_file, device = "jpeg")
+    if (i == length(pas)){
+      d = paste('graph', test[i] , nrow(tab_final), sep = "_")
+      subtitle = paste(" (", test[i] ,"-", nrow(tab_final) , ")" , sep = " " )
+      name_file = paste(d,"jpeg" , sep = ".")
+
+      data = tab_final[test[i]:nrow(tab_final),]
+      data %>%
+       mutate(name = factor(gene , levels = ordre)) %>%
+         ggplot( aes(name, logFC, fill = logFC)) +
+         geom_bar(stat="identity", position = "dodge") +
+         scale_fill_gradientn(name = "logFC",colours = c("purple","skyblue","grey70", "yellow", "orange","red"),limits = c(-5, 9)) +
+         facet_wrap(~Experience)  +
+         coord_flip(ylim = c(-5, 9))+
+         labs(title = "Comparaison des gènes en fonction de leur logFC en présence de SvbACT ou SvbREP" , subtitle = subtitle) +
+         theme_hc() +
+         theme(plot.title = element_text(color="black", size=10, face="bold"),legend.position = "right")
+      #ggsave(name_file, device = "jpeg")
+    }
+ }
+``` 
+# Obtention du Graphique de Cleveland pour les données 
+
+
+```{r}
+data = tab_final[1:100,]
+ tab_final %>%
+   mutate(name = factor(gene , levels = ordre)) %>%
+   ggplot(aes(name,logFC)) + geom_line(aes(group = name)) +
+   geom_point(aes(color = Experience)) + labs(title = " Comparaison des gènes en fonction de leur logFC en présences de SvbACT ou SvbREP") +
+   theme(plot.title = element_text(color = "black", size = 10 , face = "bold"), legend.position = "right") + coord_flip() +
+   theme_hc()+ scale_color_manual(values = c("red", "green"), labels = c("Act", "Rep")) 
+ #ggsave("cleveland_plot_allgene.jpeg")
+
+test = seq(1,nrow(tab_final),100)
+pas = seq(1,length(test)-1,1)
+for (i in pas){
+
+
+    d = paste('cleveland_graph', test[i] , test[i+1]-1, sep = "_")
+    name_file = paste(d,"jpeg" , sep = ".")
+    subtitle = paste( "(", test[i] ,"-",  test[i+1]-1  ,")", sep = " " )
+    data = tab_final[test[i]:(test[i+1]-1),]
+    #print(test[i])
+    data %>%
+      mutate(name = factor(gene , levels = ordre)) %>%
+      ggplot(aes(name,logFC)) + geom_line(aes(group = name)) +
+      geom_point(aes(color = Experience)) +
+      labs(title ="Comparaison des gènes en fonction de leur logFC en présence de SvbACT ou SvbREP" , subtitle = subtitle)+
+      theme_hc() +
+      theme(plot.title = element_text(color="black", size=10, face="bold"),legend.position = "right") +
+      coord_flip(ylim = c(-5,9)) + scale_color_manual(values = c("red", "green"), labels = c("Act/Ctrl", "Rep/Ctrl"))
+    ggsave(name_file, device = "jpeg")
+    if (i == length(pas)){
+      d = paste('cleveland_graph', test[i] , nrow(tab_final), sep = "_")
+      subtitle = paste(" (", test[i] ,"-", nrow(tab_final) , ")" , sep = " " )
+      name_file = paste(d,"jpeg" , sep = ".")
+
+      data = tab_final[test[i]:nrow(tab_final),]
+      data %>%
+      mutate(name = factor(gene , levels = ordre)) %>%
+      ggplot(aes(name,logFC)) + geom_line(aes(group = name)) +
+      geom_point(aes(color = Experience)) +
+      labs(title ="Comparaison des gènes en fonction de leur logFC en présence de SvbACT ou SvbREP" , subtitle = subtitle)+
+      theme_hc() +
+      theme(plot.title = element_text(color="black", size=10, face="bold"),legend.position = "right") + coord_flip(ylim = c(-5,9)) + scale_color_manual(values = c("red", "green"), labels = c("Act", "Rep"))
+      #ggsave(name_file, device = "jpeg")
+    }
+ }
+```
+
+#Cleveland plot avec les gènes et la différence de logFC 
+```{r}
+lignes_Rep = tab_final[seq(2, nrow(tab_final), 2),]
+lignes_Act = tab_final[seq(1, nrow(tab_final), 2),]
+pas_diff = seq(1, nrow(lignes_Act))
+
+
+for (i in pas_diff){
+      if ( lignes_Act$gene[i] == lignes_Rep$gene[i]){
+          lignes_Act$diff[i] = lignes_Act$logFC[i] - lignes_Rep$logFC[i]  
+          lignes_Rep$diff[i] = "NA" } }
+
+tab_diff = rbind(lignes_Act , lignes_Rep)
+tab_diff_order = tab_diff[order(tab_diff$gene),]
+tab_diff_order$diff = as.numeric(tab_diff_order$diff)
+right_label <- tab_diff_order %>%
+        group_by(gene) %>%
+        arrange((diff)) %>%
+        top_n(1)
+
+tab_diff_order %>%
+        ggplot(aes(gene,logFC)) + geom_line(aes(group = gene)) +
+        geom_point(aes(color = Experience, label = diff)) + labs(title = " Comparaison des gènes en fonction de leur logFC en présences de SvbACT ou SvbREP")+ 
+        theme(plot.title = element_text(color = "black", size = 10 , face = "bold"), legend.position = "right") + coord_flip() +
+        theme_hc()+ scale_color_manual(values = c("red", "green"), labels = c("Act/Ctrl", "Rep/Ctrl")) +geom_text(aes(label = diff , vjust = -0.5 ),label.size = 5, position = "identity")
+
+
+test = seq(1,nrow(tab_final),50)
+pas = seq(1,length(test)-1,1)
+for (i in pas){
+
+
+    
+    d = paste('cleveland_graph_diff',test[i] , test[i + 1] - 1, sep = "_")
+    name_file = paste(d,"jpeg" , sep = ".")
+    subtitle = paste( "(", test[i],"-", test[i +1] -1  ,")", sep = " " )
+    data = tab_diff_order[test[i]:(test[i+1] - 1),]
+
+    data %>%
+      ggplot(aes(logFC,gene)) + geom_line(aes(group = gene)) +
+        geom_point(aes(color = Experience, label = diff)) + labs(title = " Comparaison des gènes en fonction de leur logFC en présences de SvbACT ou SvbREP")+
+        theme(plot.title = element_text(color = "black", size = 10 , face = "bold"), legend.position = "right") +
+        theme_hc()+ scale_color_manual(values = c("red", "green"), labels = c("Act/Ctrl", "Rep/Ctrl")) +geom_text(aes(label = diff , vjust = -0.5), size = 3 , position = "identity")
+    ggsave(name_file, device = "jpeg")
+    if (i == length(pas)){
+      d = paste('cleveland_graph_diff', test[i] , nrow(tab_final), sep = "_")
+      subtitle = paste(" (", test[i] ,"-", nrow(tab_final) , ")" , sep = " " )
+      name_file = paste(d,"jpeg" , sep = ".")
+
+      data = tab_diff_order[test[i]:nrow(tab_final),]
+      data %>%
+      ggplot(aes(logFC,gene)) + geom_line(aes(group = gene)) +
+        geom_point(aes(color = Experience, label = diff)) + labs(title = " Comparaison des gènes en fonction de leur logFC en présences de SvbACT ou SvbREP")+
+        theme(plot.title = element_text(color = "black", size = 10 , face = "bold"), legend.position = "right") +
+        theme_hc()+ scale_color_manual(values = c("red", "green"), labels = c("Act/Ctrl", "Rep/Ctrl")) +geom_text(aes(label = diff , vjust = -0.5, position = "identity"))
+     # ggsave(name_file, device = "jpeg")
+    }
+ }
+
+
+
+
+
+
+```
+
+
+##Ordonner le graph en fonction de la difference de logFC 
+
+```{r}
+ordre_diff = lignes_Act[order(-lignes_Act$diff),]
+ordre_vect = rep(ordre_diff$gene ,each = 2)
+ordre_vect = as.character(ordre_vect)
+test = seq(1,nrow(tab_final),50)
+pas = seq(1,length(test)-1,1)
+bre = seq(from = (-5), to = 9 , by = 1)
+for (i in pas){
+
+    d = paste('cleveland_graph_order',test[i] , test[i + 1] - 1, sep = "_")
+    name_file = paste(d,"jpeg" , sep = ".")
+    subtitle = paste( "(", test[i],"-", test[i +1] -1  ,")", sep = " " )
+    data = tab_diff_order[test[i]:(test[i+1] - 1),]
+
+    data %>%
+     mutate(name = factor(gene , levels = ordre_vect)) %>% 
+        ggplot(aes(name,logFC)) + 
+        geom_line(aes(group = name)) +
+        geom_point(aes(color = Experience, label = diff)) +
+        labs(title = " Comparaison des gènes en fonction de leur logFC en présences de SvbACT ou SvbREP") +
+        theme(plot.title = element_text(color = "black", size = 10 , face = "bold"), legend.position = "right") +
+        theme_hc() +
+        scale_color_manual(values = c("red", "green"), labels = c("Act", "Rep")) +
+        geom_text(aes(label = diff , vjust = -0.5), size = 3 , position = "identity") + 
+        coord_flip(ylim = c(-5, 9) ) +
+      scale_y_continuous(breaks = bre) +
+      geom_hline(yintercept = 0,linetype="dashed",color = "purple") + 
+    ggsave(name_file, device = "jpeg")
+    if (i == length(pas)){
+      d = paste('cleveland_graph_order', test[i] , nrow(tab_final), sep = "_")
+      subtitle = paste(" (", test[i] ,"-", nrow(tab_final) , ")" , sep = " " )
+      name_file = paste(d,"jpeg" , sep = ".")
+
+      data = tab_diff_order[test[i]:nrow(tab_diff_order),]
+      data %>%
+        mutate(name = factor(gene , levels = ordre_vect)) %>% 
+        ggplot(aes(name,logFC)) + 
+        geom_line(aes(group = name)) +
+        geom_point(aes(color = Experience, label = diff)) + 
+        labs(title = " Comparaison des gènes en fonction de leur logFC en présences de SvbACT ou SvbREP") +
+        theme(plot.title = element_text(color = "black", size = 10 , face = "bold"), legend.position = "right") +
+        theme_hc() + 
+        scale_color_manual(values = c("red", "green"), labels = c("Act", "Rep")) +
+        geom_text(aes(label = diff , vjust = -0.5, position = "identity")) + 
+        coord_flip(ylim = c(-5, 9)) +
+        geom_hline(yintercept = 0,linetype="dashed",color = "purple") + 
+        scale_y_continuous(breaks = bre)
+      #ggsave(name_file, device = "jpeg")
+    }
+ }
+```
+
+
+#Rajout des données ACT/REP   
+
+```{r}
+tab_act_rep = read.table("/Volumes/Promise\ RAID/Work/Alex_analyse/RNASEQ/RNASEQ/script/tab_final_actrep_final.txt", header = TRUE)
+
+
+tab_act_rep$negpvalue = -log10(tab_act_rep$pvalue)
+tab_act_rep$gene = factor(tab_act_rep$gene)
+tab_act_rep_order = tab_act_rep[order(tab_act_rep$logFC),]
+ggplot(tab_act_rep_order , aes(gene,logFC, fill = logFC)) + geom_bar(stat = "identity" , position ="dodge" ) +coord_flip()  + scale_fill_gradientn(colours = rainbow(6)) + theme_minimal() + facet_wrap(~Experience)
+ordre = as.character(tab_final$gene)
+tab_act_rep %>%
+       mutate(name = factor(gene , levels = ordre)) %>%
+        ggplot( aes(name, logFC,fill = logFC)) +
+        geom_bar(stat="identity", position = "dodge") +
+        scale_fill_gradientn(name = "logFC",colours = c("purple","skyblue","grey70", "yellow", "orange","red"),limits = c(-5, 9)) +
+        facet_wrap(~Experience)  +
+        coord_flip(ylim = c(-5, 9)) +
+        labs(title ="Comparaison des gènes en fonction de leur logFC en présence de SvbACT ou SvbREP" , subtitle = subtitle)+
+        theme_hc() +
+        theme(plot.title = element_text(color="black", size=10, face="bold"),legend.position = "right")
+
+
+
+test = seq(1,nrow(tab_act_rep),100)
+pas = seq(1,length(test)-1,1)
+for (i in pas){
+
+
+    d = paste('graph_act_rep', test[i] , test[i+1]-1, sep = "_")
+    name_file = paste(d,"jpeg" , sep = ".")
+    subtitle = paste( "(", test[i] ,"-",  test[i+1]-1  ,")", sep = " " )
+    data = tab_act_rep_order[test[i]:(test[i+1]-1),]
+    #print(test[i])
+    data %>%
+       mutate(name = factor(gene , levels = ordre)) %>%
+         ggplot( aes(gene, logFC, fill = logFC)) +
+         geom_bar(stat="identity", position = "dodge") +
+         scale_fill_gradientn(name = "logFC",colours = c("purple","skyblue","grey70", "yellow", "orange","red"),limits = c(-5, 9)) +
+         facet_wrap(~Experience)  +
+         coord_flip(ylim = c(-5, 9)) +
+         labs(title ="Comparaison des gènes en fonction de leur logFC en présence de SvbACT ou SvbREP" , subtitle = subtitle)+
+         theme_hc() +
+         theme(plot.title = element_text(color="black", size=10, face="bold"),legend.position = "right")
+    ggsave(name_file, device = "jpeg")
+    if (i == length(pas)){
+      d = paste('graph_act_rep', test[i] , nrow(tab_act_rep_order), sep = "_")
+      subtitle = paste(" (", test[i] ,"-", nrow(tab_act_rep_order) , ")" , sep = " " )
+      name_file = paste(d,"jpeg" , sep = ".")
+
+      data = tab_act_rep_order[test[i]:nrow(tab_act_rep_order),]
+      data %>%
+       mutate(name = factor(gene , levels = ordre)) %>%
+         ggplot( aes(name, logFC, fill = logFC)) +
+         geom_bar(stat="identity", position = "dodge") +
+         scale_fill_gradientn(name = "logFC",colours = c("purple","skyblue","grey70", "yellow", "orange","red"),limits = c(-5, 9)) +
+         facet_wrap(~Experience)  +
+         coord_flip(ylim = c(-5, 9))+
+         labs(title = "Comparaison des gènes en fonction de leur logFC en présence de SvbACT ou SvbREP" , subtitle = subtitle) +
+         theme_hc() +
+         theme(plot.title = element_text(color="black", size=10, face="bold"),legend.position = "right")
+      ggsave(name_file, device = "jpeg")
+    }
+ }
+```
+
+#Gene upReg et DownRep et rpkm 
+```{r}
+#write.table(upact_dowRep_rpkm, "geneUpAct_DownRep_rpkm_nonsign.txt", row.names = upact_dowRep_rpkm$gene)
+
+upact_dowRep_rpkm_nosign = read.table("/Volumes/Promise\ RAID/Work/Alex_analyse/RNASEQ/RNASEQ/script/DEList/geneUpAct_DownRep_rpkm_nosignpval.tkt", header = TRUE)
+plot(upact_dowRep_rpkm_nosign$rpkm,upact_dowRep_rpkm_nosign$logFC_rep)
+plot(upact_dowRep_rpkm_nosign$rpkm,upact_dowRep_rpkm_nosign$logFC_rep , xlim = c(0,2000), xlab = "Gene Expression on Ctrl" , ylab = "logFC on SvbREP",pch = 20)
+plot(upact_dowRep_rpkm_nosign$rpkm,upact_dowRep_rpkm_nosign$logFC_rep , xlim = c(0,500),xlab = "Gene Expression on Ctrl" , ylab = "logFC on SvbREP",pch = 20)
+plot(upact_dowRep_rpkm_nosign$rpkm,upact_dowRep_rpkm_nosign$logFC_rep , xlim = c(0,38),xlab = "Gene Expression on Ctrl" , ylab = "logFC on SvbREP", pch = 20)
+#We use 38 to threshold it's the thresolld using to filter gene which are not express
+tab_act_rep_rpkm_38 = upact_dowRep_rpkm_nosign[upact_dowRep_rpkm_nosign$rpkm>=38,]
+#We use 0.75 to threshold because it'ds the threshold use on past experiment to have biological target 
+rep0.75 = tab_act_rep_rpkm_38[tab_act_rep_rpkm_38$logFC_rep <= -0.75,]
+rep_0.5 = tab_act_rep_rpkm_38[tab_act_rep_rpkm_38$logFC_rep <= -0.5,]
+act_1.6_rep0.75 = rep0.75[rep0.75$logFC_act >= 1.6,]
+
+```
+
+#Direct target 
+
+```{r}
+up_target = read.table("/Volumes/Promise RAID/Work/Alex_analyse/integrationChipseq_RNAseq/UP_ActVsCtrl_fixation.txt")
+down_target = read.table("/Volumes/Promise RAID/Work/Alex_analyse/integrationChipseq_RNAseq/down_RepVsCtrl_fixation.txt")
+tab_act_rpkm = read.table("DEList/tab_final_act.txt",header = T)
+upAct_rpkm = tab_act_rpkm[tab_act_rpkm$gene%in%up_ActContr == TRUE,]
+nrow(upAct_rpkm[upAct_rpkm$rpkm>38,])
+upTarget_rpkm = tab_act_rpkm[tab_act_rpkm$gene%in%up_target$x==TRUE,]
+nrow(upTarget_rpkm[upTarget_rpkm$rpkm>38,])
+
+tab_rep_rpkm = read.table("DEList/tab_final_rep.txt",header = T)
+downRep_rpkm = tab_rep_rpkm[tab_rep_rpkm$gene%in%down_RepContr == TRUE,]
+nrow(downRep_rpkm[downRep_rpkm$rpkm>38,])
+downTarget_rpkm = tab_rep_rpkm[tab_rep_rpkm$gene%in%down_target$x ==TRUE,]
+nrow(downTarget_rpkm[downTarget_rpkm$rpkm>38,])
+```
+
+
+#Recuperer les coordonnées des genes up 
+
+```{r}
+
+upAct_rpkm_order = upAct_rpkm[order(upAct_rpkm$logFC,decreasing = TRUE),]
+#write(upAct_rpkm_order$gene,"DEList/geneUpAct.txt")
+up_coord = read.table("/Volumes/Promise\ RAID/Work/Alex_analyse/chipseq/Matrix_enrich/upact_coord.txt", sep = ",",header = TRUE)
+colnames(up_coord) = c("gene", "chromosome", "start" ,"end")
+upACT_coord_logFC = merge(up_coord,upAct_rpkm_order, by = "gene")
+
+upACT_coord_logFC = upACT_coord_logFC[order(upACT_coord_logFC$logFC,decreasing = T),]
+upACT_coord_logFC = upACT_coord_logFC[,1:4]
+#export(upACT_coord_logFC, "upACT_coord.bed",format = "bed")
+```
+
+#GlimmaPlot 
+
+###MAPLOT
+
+```{r}
+groups = RNAseq_norm$samples$group
+summary(diffGeneActvsCs <- decideTestsDGE(lrt.2$ActVsContr ,adjust.method="BH", p.value=0.05, lfc=0))
+
+glMDPlot(lrt.2$ActVsContr, status = diffGeneActvsCs, counts = RNAseq_norm, groups = groups,transform = TRUE, side.main = "ID", side.ylab = "Expression (logCPM)",cols = c("green","grey","darkgreen"), folder = "ActVsCs", html = "MAplot_ActvsCs")
+
+
+   
+
+summary(diffGeneRepvsCs <- decideTestsDGE(lrt.2$RepVsContr ,adjust.method="BH", p.value=0.05, lfc=0))
+glMDPlot(lrt.2$RepVsContr, status = diffGeneRepvsCs, counts = RNAseq_norm, groups = groups,transform = TRUE, side.main = "ID", side.ylab = "Expression (logCPM)",cols = c("red","grey","darkred"), folder = "RepVsCs", html = "MAplot_RepvsCs")
+
+```
+
+##VolcanoPlot 
+
+```{r}
+DE_Act <- c("downregulated", "notDE", "upregulated")[as.factor(diffGeneActvsCs)]
+ID = rownames(lrt.2$ActVsContr)
+info = lrt.2.tables$ActVsContr[,1:6]
+info = info[,-3]
+info = info[,-4]
+anno = cbind(ID,DE_Act,info)
+glXYPlot(x = lrt.2.tables$ActVsContr$logFC, y = -log10(lrt.2.tables$ActVsContr$BH), xlab = "logFC", ylab = "-log10(Pvalue_BH)", status = diffGeneActContr, groups = groups,anno = anno, counts = RNAseq_norm,  side.main = "ID", display.columns = c("ID","DE","logFC","logCPM","PValue","BH"),cols = c("green","grey","darkgreen"),folder = "ActVsCs" ,html = "volcano_ActvsCs")
+
+DE_Rep <- c("downregulated", "notDE", "upregulated")[as.factor(diffGeneRepvsCs)]
+ID = rownames(lrt.2$RepVsContr)
+info = lrt.2.tables$RepVsContr[,1:6]
+info = info[,-3]
+info = info[,-4]
+anno = cbind(ID,DE_Rep,info)
+
+glXYPlot(x = lrt.2.tables$RepVsContr$logFC, y = -log10(lrt.2.tables$RepVsContr$BH), xlab = "logFC", ylab = "-log10(Pvalue_BH)", status = diffGeneRepContr, groups = groups,anno = anno, counts = RNAseq_norm,  side.main = "ID", display.columns = c("ID","DE","logFC","logCPM","PValue","BH"),cols = c("red","grey","darkred"),folder = "RepVsCs" ,html = "volcano_RepvsCs")
+
+
+DE_ActRep <- c("downregulated", "notDE", "upregulated")[as.factor(diffGeneActRep)]
+ID = rownames(lrt.2$ActVsRep)
+info = lrt.2.tables$ActVsRep[,1:6]
+info = info[,-3]
+info = info[,-4]
+anno = cbind(ID,DE_ActRep,info)
+
+glXYPlot(x = lrt.2.tables$ActVsRep$logFC, y = -log10(lrt.2.tables$ActVsRep$BH), xlab = "logFC", ylab = "-log10(Pvalue_BH)", status = diffGeneActRep, groups = groups,anno = anno, counts = RNAseq_norm,  side.main = "ID", display.columns = c("ID","DE","logFC","logCPM","PValue","BH"),cols = c("red","grey","darkgreen"),folder = "ActvsRep" ,html = "volcano_ActvsRep")
+```
+
+```{r}
+ActVsContr_et = exactTest(dispersionActVsContr)
+resEdgeR_ActCtrl=topTags(ActVsContr_et,n=3219)
+tab_volcano = data.frame(logFC = lrt.2.tables$ActVsContr$logFC, negLogPval = -log10(lrt.2.tables$ActVsContr$PValue))
+head(tab_volcano)
+par(mar = c(5, 4, 4, 4))
+plot(tab_volcano, pch = 16, cex = 0.6, xlab = expression(log[2]~fold~change),
+     ylab = expression(-log[10]~pvalue), main = "Gènes DE Act/Ctrl")
+lfc = 0 
+pval = 0.05
+
+## Selecting interest genes
+signGenes_up = (tab_volcano$logFC > lfc & tab_volcano$negLogPval > -log10(pval))
+
+signGenes_down = (tab_volcano$logFC < lfc & tab_volcano$negLogPval > -log10(pval))
+## Identifying the selected genes
+points(tab_volcano[signGenes_up, ], pch = 16, cex = 0.8, col = "green")
+points(tab_volcano[signGenes_down, ], pch = 16, cex = 0.8, col = "red")
+abline(h = -log10(pval), col = "green3", lty = 2)
+abline(v = c(-lfc, lfc), col = "blue", lty = 2)
+mtext(paste("pval =", pval), side = 4, at = -log10(pval), cex = 0.8, line = 0.5, las = 1)
+mtext(c(paste("-", lfc, "fold"), paste("+", lfc, "fold")), side = 3, at = c(-lfc, lfc), cex = 0.8, line = 0.5)
+
+text(8.394441, -log10(8.54811e-72),"svb",pos = 3)
+text(5.168650,-log10(3.146907e-16),"Ace",pos = 3)
+text(-5.005797,-log10(3.500281e-39),"Ten-a",pos = 3)
+text(-0.05103951,-log10(0.8660058),"Mnt",pos = 3)
+text(2.250347,-log10(7.663101e-11), "MtnE",pos = 3)
+#rajouter étiquette gène
+
+
+
+
+```

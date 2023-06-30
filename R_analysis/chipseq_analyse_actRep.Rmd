@@ -1,0 +1,1529 @@
+---
+title: "Determination and characterisation of SvbAct and SvbRep binding events on S2 cells"
+author: "Alexandra MANCHENO FERRIS"
+date: "02/02/2017"
+output: 
+  html_document: 
+    number_sections: yes
+    code_folding: hide
+    toc: yes
+    toc_depth: 5
+    theme: journal
+---
+# Set to work directory
+```{r}
+#save.image("Myworkspace.RData")
+load("Myworkspace.RData")
+```
+
+
+On this script we compare the binding of SvbAct at the binding of SvbRep, we want to determine where these two form of Svb bind to the DNA. To do that we performed experiment of ChIP-seq on stable transformed S2 cells. 
+
+B1 = SvbAct 
+
+FS = SvbRep 
+
+# Load packages
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+library(GenomicRanges)
+library(GenomicAlignments)
+
+library(lattice)
+library(chipseq)
+library(ChIPpeakAnno)
+library(AnnotationHub)
+library(TxDb.Dmelanogaster.UCSC.dm6.ensGene)
+library(org.Dm.eg.db)
+library(limma)
+library(readxl)
+library(ggplot2)
+library(ggpubr)
+```
+
+# Load Bamfiles 
+
+```{r include=FALSE}
+# bamfiles = dir("../bamfiles/",pattern = ".bam")
+# bamfiles
+# bamfiles = dir(file.path("~/Documents/Chipseq_ActRep/bamfiles/",pattern = ".bam$", full.names = T))
+#A quick summary at the BAM files
+
+# for ( i in 1: length(bamfiles)){
+#   print(bamfiles[i])
+#   quickBamFlagSummary(paste0("../bamfiles/",bamfiles[i]))
+# }
+
+
+``` 
+
+# Import Bamfiles
+```{r}
+# B1=readGAlignments(paste0("../bamfiles/",bamfiles[1]))
+# B1_1=readGAlignments(paste0("../bamfiles/",bamfiles[3]))
+# B1_2=readGAlignments(paste0("../bamfiles/",bamfiles[4]))
+# B1_Input=readGAlignments(paste0("../bamfiles/",bamfiles[2]))
+# FS=readGAlignments(paste0("../bamfiles/",bamfiles[8]))
+# FS1=readGAlignments(paste0("../bamfiles/",bamfiles[6]))
+# FS2=readGAlignments(paste0("../bamfiles/",bamfiles[7]))
+# FS_Input=readGAlignments(paste0("../bamfiles/",bamfiles[5]))
+```
+
+
+We observed mapping on seqnames non associated to chromosomes.  
+
+# Convert to GRanges objects 
+
+```{r}
+B1_gr=granges(B1)
+B1_1_gr=granges(B1_1)
+B1_2_gr=granges(B1_2)
+B1_Input_gr=granges(B1_Input)
+FS_gr=granges(FS)
+FS1_gr=granges(FS1)
+FS2_gr=granges(FS2)
+FS_Input_gr=granges(FS_Input)
+#B1_gr
+```
+
+
+To verify that there are not many read that are mapped on these non-conventionnal sequences we do:
+
+```{r, include=FALSE}
+strange_seqnames = c("211000022278033","211000022278170","211000022278224","211000022278269","211000022278391","211000022278415","211000022279450","211000022280171","211000022280577","211000022280583","211000022280626","211000022278164","211000022278493","211000022278611","211000022278672","211000022278673","211000022278676","211000022278712","211000022278858","211000022278859","211000022278860","211000022278888","211000022278889","211000022278926","211000022279095","211000022279117","211000022279118","211000022279147","211000022279148","211000022279155","211000022279156","211000022279157","211000022279158","211000022279308","211000022279370","211000022279371","211000022279372","211000022279373","211000022279463","211000022279517","211000022279521","211000022279540","211000022279575","211000022279578","211000022279691","211000022279692","211000022279693","211000022279695","211000022279700","211000022279743","211000022279745","211000022279746","211000022279849","211000022279850","211000022279866","211000022279868","211000022279869","211000022279872","211000022279898","211000022279964","211000022280015","211000022280037","211000022280046","211000022280058","211000022280070","211000022280080","211000022280093","211000022280105","211000022280127","211000022280128","211000022280131","211000022280202","211000022280214","211000022280227","211000022280251","211000022280473","211000022280490","211000022280498","211000022280533","211000022280551","211000022280564","211000022280589","211000022280621","211000022280653","211000022280654","211000022280655","211000022280772","211000022280659","211000022279579","211000022280596","211000022279719","211000022279098","211000022280328","211000022278032","211000022278038","211000022278047","211000022278049","211000022278091","211000022278100","211000022278123","211000022278127","211000022278134","211000022278137","211000022278139","211000022278140","211000022278143","211000022278145","211000022278167","211000022278174","211000022278176","211000022278178","211000022278204","211000022278207","211000022278210","211000022278212","211000022278217","211000022278219","211000022278220","211000022278253","211000022278254","211000022278273","211000022278296","211000022278304","211000022278311","211000022278327","211000022278335","211000022278377","211000022278392","211000022278398","211000022278409","211000022278421","211000022278424","211000022278426","211000022278435","211000022278439","211000022278440","211000022278451","211000022278506","211000022278507","211000022278511","211000022278536","211000022278537","211000022278540","211000022278549","211000022278569","211000022278576","211000022278604","211000022278652","211000022278653","211000022278668","211000022278675","211000022278702","211000022278707","211000022278717","211000022278720","211000022278721","211000022278723","211000022278751","211000022278755","211000022278757","211000022278759","211000022278768","211000022278769","211000022278773","211000022278776","211000022278777","211000022278781","211000022278785","211000022278788","211000022278807","211000022278808","211000022278865","211000022278875","211000022278883","211000022278890","211000022278898","211000022278899","211000022278916","211000022278937","211000022278947","211000022278952","211000022278960","211000022278969","211000022278979","211000022278982","211000022278983","211000022279014","211000022279016","211000022279050","211000022279052","211000022279053","211000022279069","211000022279070","211000022279087","211000022279094","211000022279121","211000022279124","211000022279126","211000022279132","211000022279141","211000022279160","211000022279162","211000022279183","211000022279197","211000022279215","211000022279230","211000022279237","211000022279246","211000022279247","211000022279257","211000022279282","211000022279288","211000022279289","211000022279311","211000022279345","211000022279375","211000022279378","211000022279380","211000022279393","211000022279411","211000022279413","211000022279420","211000022279431","211000022279441","211000022279442","211000022279444")
+strange_seqnames2 = c("211000022279469","211000022279473","211000022279477","211000022279479","211000022279487","211000022279503","211000022279506","211000022279508","211000022279509","211000022279513","211000022279516","211000022279559","211000022279593","211000022279599","211000022279626","211000022279641","211000022279648","211000022279652","211000022279653","211000022279654","211000022279659","211000022279666","211000022279682","211000022279696","211000022279712","211000022279722","211000022279750","211000022279782","211000022279785","211000022279787","211000022279842","211000022279844","211000022279845","211000022279856","211000022279885","211000022279900","211000022279911","211000022279942","211000022279949","211000022279959","211000022279960","211000022280002","211000022280014","211000022280030","211000022280031","211000022280032","211000022280033","211000022280035","211000022280065","211000022280071","211000022280112","211000022280117","211000022280123","211000022280124","211000022280133","211000022280135","211000022280143","211000022280151","211000022280152","211000022280153","211000022280154","211000022280174","211000022280177","211000022280179","211000022280191","211000022280192","211000022280193","211000022280194","211000022280198","211000022280211","211000022280212","211000022280259","211000022280292","211000022280293","211000022280294","211000022280295","211000022280296","211000022280326","211000022280336","211000022280427","211000022280440","211000022280447","211000022280448","211000022280461","211000022280465","211000022280472","211000022280476","211000022280485","211000022280518","211000022280519","211000022280525","211000022280544","211000022280545","211000022280548","211000022280554","211000022280555","211000022280556","211000022280557","211000022280561","211000022280562","211000022280595","211000022280599","211000022280607","211000022280618","211000022280644","211000022280696","211000022280700","211000022280735","211000022278161","211000022278241","211000022278242","211000022278298","211000022278307","211000022278522","211000022278554","211000022278663","211000022278664","211000022278878","211000022278886","211000022278942","211000022278951","211000022279055","211000022279101","211000022279103","211000022279106","211000022279122","211000022279190","211000022279342","211000022279399","211000022279529","211000022279571","211000022279600","211000022279602","211000022279667","211000022279701","211000022279708","211000022279810","211000022279945","211000022279991","211000022280091","211000022280436","211000022280467","211000022280492","211000022280500","211000022278099","211000022278122","211000022278125","211000022278165","211000022278172","211000022278187","211000022278208","211000022278209","211000022278225","211000022278226","211000022278228","211000022278229","211000022278232","211000022278233","211000022278235","211000022278236","211000022278237","211000022278249","211000022278252","211000022278277","211000022278297","211000022278299","211000022278315","211000022278316","211000022278317","211000022278319","211000022278320","211000022278321","211000022278322","211000022278323","211000022278325","211000022278340","211000022278342","211000022278350","211000022278352","211000022278353","211000022278355","211000022278359","211000022278360","211000022278361","211000022278365","211000022278382","211000022278411","211000022278414","211000022278417","211000022278431","211000022278458","211000022278459","211000022278460","211000022278461","211000022278462","211000022278463","211000022278464","211000022278466","211000022278467","211000022278468","211000022278469")
+strange_seqnames_3 = c("211000022278470","211000022278471","211000022278472","211000022278474","211000022278476","211000022278477","211000022278478","211000022278480","211000022278482","211000022278483","211000022278485","211000022278486","211000022278487","211000022278488","211000022278489","211000022278490","211000022278491","211000022278492","211000022278498","211000022278502","211000022278504","211000022278505","211000022278512","211000022278513","211000022278516","211000022278524","211000022278534","211000022278544","211000022278555","211000022278557","211000022278578","211000022278584","211000022278596","211000022278608","211000022278609","211000022278610","211000022278612","211000022278613","211000022278614","211000022278615","211000022278616","211000022278617","211000022278618","211000022278619","211000022278620","211000022278621","211000022278622","211000022278623","211000022278624","211000022278625","211000022278626","211000022278627","211000022278628","211000022278629","211000022278630","211000022278631","211000022278632","211000022278633","211000022278635","211000022278636","211000022278637","211000022278638","211000022278643","211000022278644","211000022278645","211000022278649","211000022278654","211000022278655","211000022278669","211000022278670","211000022278677","211000022278690","211000022278691","211000022278692","211000022278693","211000022278695","211000022278704","211000022278705","211000022278715","211000022278724","211000022278725","211000022278726","211000022278774","211000022278775","211000022278810","211000022278812","211000022278813","211000022278814","211000022278817","211000022278819","211000022278820","211000022278821","211000022278822","211000022278823","211000022278824","211000022278825","211000022278826","211000022278827","211000022278828","211000022278829","211000022278830","211000022278831","211000022278832","211000022278834","211000022278835","211000022278836","211000022278838","211000022278840","211000022278842","211000022278843","211000022278844","211000022278846","211000022278850","211000022278852","211000022278853","211000022278854","211000022278855","211000022278856","211000022278857","211000022278868","211000022278876","211000022278879","211000022278880","211000022278892","211000022278896","211000022278905","211000022278906","211000022278907","211000022278908","211000022278909","211000022278910","211000022278911","211000022278921","211000022278925","211000022278933","211000022278938","211000022278950","211000022278971")
+strange_seqnames_4 =c("211000022278976","211000022279006","211000022279009","211000022279010","211000022279012","211000022279045","211000022279062","211000022279063","211000022279064","211000022279065","211000022279066","211000022279067","211000022279068","211000022279072","211000022279073","211000022279075","211000022279076","211000022279077","211000022279078","211000022279079","211000022279080","211000022279081","211000022279082","211000022279083","211000022279084","211000022279085","211000022279092","211000022279093","211000022279109","211000022279111","211000022279112","211000022279113","211000022279227","211000022279244","211000022279245","211000022279277","211000022279287","211000022279290","211000022279291","211000022279296","211000022279297","211000022279298","211000022279299","211000022279300","211000022279301","211000022279302","211000022279303","211000022279304","211000022279305","211000022279306","211000022279307","211000022279315","211000022279316","211000022279322","211000022279327","211000022279328","211000022279332","211000022279339","211000022279340","211000022279388","211000022279408","211000022279437","211000022279438","211000022279446","211000022279460","211000022279497","211000022279499","211000022279501","211000022279502","211000022279504","211000022279505","211000022279514","211000022279515","211000022279518","211000022279528","211000022279530","211000022279531","211000022279536","211000022279537","211000022279542","211000022279543","211000022279552","211000022279553","211000022279563","211000022279570","211000022279601","211000022279604","211000022279605","211000022279608","211000022279610","211000022279673","211000022279674","211000022279686","211000022279689","211000022279690","211000022279698","211000022279703","211000022279704","211000022279705","211000022279715","211000022279721","211000022279730","211000022279731","211000022279732","211000022279767","211000022279772","211000022279773","211000022279774","211000022279803","211000022279830","211000022279832","211000022279833","211000022279834","211000022279836","211000022279846","211000022279857","211000022279859","211000022279860","211000022279861","211000022279862","211000022279881","211000022279883","211000022279888","211000022279902","211000022279917","211000022279944","211000022279955","211000022279957","211000022279967","211000022279968","211000022279978","211000022279984","211000022279994","211000022279998","211000022280007","211000022280016","211000022280017","211000022280019","211000022280022","211000022280023","211000022280029","211000022280042","211000022280060","211000022280061","211000022280062","211000022280088","211000022280095","211000022280148","211000022280173","211000022280241","211000022280243","211000022280330","211000022280439","211000022280442","211000022280453","211000022280466","211000022280470","211000022280479","211000022280495","211000022280507","211000022280529","211000022280532","211000022280534","211000022280537","211000022280538","211000022280539","211000022280542","211000022280578","211000022280584","211000022280585","211000022280586","211000022280587","211000022280593","211000022280594","211000022280597","211000022280603","211000022280612","211000022280620","211000022280622","211000022280624","211000022280625","211000022280628","211000022280629","211000022280632","211000022280633","211000022280639","211000022280641","211000022280642","211000022280645","211000022280649","211000022280668","211000022280669","211000022278218","211000022278495","211000022278709","211000022278710","211000022279007","211000022279104","211000022279211","211000022279224","211000022279334","211000022279639","211000022280742")
+
+for (i in 1:length(strange_seqnames)){
+  #print(strange_seqnames)
+  
+  read_mapped_B1 = B1_gr[seqnames(B1_gr) == strange_seqnames[i]]
+  #print(length(a))
+  read_mapped_1B1 = B1_1_gr[seqnames(B1_1_gr) == strange_seqnames[i]]
+  read_mapped_1B2 = B1_2_gr[seqnames(B1_2_gr) == strange_seqnames[i]]
+  read_mapped_B1_Input = B1_Input_gr[seqnames(B1_Input_gr) == strange_seqnames[i]]
+  read_mapped_FS = FS_gr[seqnames(FS_gr) == strange_seqnames[i]]
+  read_mapped_FS1 = FS1_gr[seqnames(FS1_gr) == strange_seqnames[i]]
+  read_mapped_FS2 = FS2_gr[seqnames(FS2_gr) == strange_seqnames[i]]
+  read_mapped_FS_input = FS_Input_gr[seqnames(FS_Input_gr) == strange_seqnames[i]]
+  if (length(read_mapped_B1) >= length(B1_gr)*0.01){
+    print(strange_seqnames + " must be delete of FASTA file reference genome")
+  }
+  if(length(read_mapped_1B1) >= length(B1_1_gr)*0.01){
+    print(strange_seqnames + " must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_1B2) >= length(B1_2_gr)*0.01){
+    print(strange_seqnames + "must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_B1_Input) >= length(B1_Input_gr)*0.01){
+    print(strange_seqnames + "must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_FS) >= length(FS_gr)*0.01){
+    print(strange_seqnames + "must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_FS1) >= length(FS1_gr)*0.01){
+    print(strange_seqnames + "must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_FS2) >= length(FS2_gr)*0.01){
+    print(strange_seqnames + "must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_FS_input) >= length(FS_Input_gr)*0.01){
+    print(strange_seqnames + "must be delete of FASTA file reference genome")
+  }
+}
+
+for (i in 1:length(strange_seqnames2)){
+  read_mapped_B1 = B1_gr[seqnames(B1_gr) == strange_seqnames2[i]]
+  #print(length(read_mapped_B1))
+  read_mapped_1B1 = B1_1_gr[seqnames(B1_1_gr) == strange_seqnames2[i]]
+  read_mapped_1B2 = B1_2_gr[seqnames(B1_2_gr) == strange_seqnames2[i]]
+  read_mapped_B1_Input = B1_Input_gr[seqnames(B1_Input_gr) == strange_seqnames2[i]]
+  read_mapped_FS = FS_gr[seqnames(FS_gr) == strange_seqnames2[i]]
+  read_mapped_FS1 = FS1_gr[seqnames(FS1_gr) == strange_seqnames2[i]]
+  read_mapped_FS2 = FS2_gr[seqnames(FS2_gr) == strange_seqnames2[i]]
+  read_mapped_FS_input = FS_Input_gr[seqnames(FS_Input_gr) == strange_seqnames2[i]]
+  if (length(read_mapped_B1) >= length(B1_gr)*0.01){
+    print(strange_seqnames2 + " must be delete of FASTA file reference genome")
+  }
+    if(length(read_mapped_1B1) >= length(B1_1_gr)*0.01){
+    print(strange_seqnames2 + " must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_1B2) >= length(B1_2_gr)*0.01){
+    print(strange_seqnames2 + "must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_B1_Input) >= length(B1_Input_gr)*0.01){
+    print(strange_seqnames2 + "must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_FS) >= length(FS_gr)*0.01){
+    print(strange_seqnames2 + "must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_FS1) >= length(FS1_gr)*0.01){
+    print(strange_seqnames2 + "must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_FS2) >= length(FS2_gr)*0.01){
+    print(strange_seqnames2 + "must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_FS_input) >= length(FS_Input_gr)*0.01){
+    print(strange_seqnames2 + "must be delete of FASTA file reference genome")
+  }
+}
+for (i in 1:length(strange_seqnames_3)){
+  read_mapped_B1 = B1_gr[seqnames(B1_gr) == strange_seqnames_3[i]]
+  read_mapped_1B1 = B1_1_gr[seqnames(B1_1_gr) == strange_seqnames_3[i]]
+  read_mapped_1B2 = B1_2_gr[seqnames(B1_2_gr) == strange_seqnames_3[i]]
+  read_mapped_B1_Input = B1_Input_gr[seqnames(B1_Input_gr) == strange_seqnames_3[i]]
+  read_mapped_FS = FS_gr[seqnames(FS_gr) == strange_seqnames_3[i]]
+  read_mapped_FS1 = FS1_gr[seqnames(FS1_gr) == strange_seqnames_3[i]]
+  read_mapped_FS2 = FS2_gr[seqnames(FS2_gr) == strange_seqnames_3[i]]
+  if (length(read_mapped_B1) >= length(B1_gr)*0.01){
+    print(strange_seqnames_3+ " must be delete of FASTA file reference genome")
+  }
+  if(length(read_mapped_1B1) >= length(B1_1_gr)*0.01){
+    print(strange_seqnames_3 + " must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_1B2) >= length(B1_2_gr)*0.01){
+    print(strange_seqnames_3 + "must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_B1_Input) >= length(B1_Input_gr)*0.01){
+    print(strange_seqnames_3 + "must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_FS) >= length(FS_gr)*0.01){
+    print(strange_seqnames_3 + "must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_FS1) >= length(FS1_gr)*0.01){
+    print(strange_seqnames_3 + "must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_FS2) >= length(FS2_gr)*0.01){
+    print(strange_seqnames_3 + "must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_FS_input) >= length(FS_Input_gr)*0.01){
+    print(strange_seqnames_3 + "must be delete of FASTA file reference genome")
+  }  
+}
+for (i in 1:length(strange_seqnames_4)){
+  read_mapped_B1 = B1_gr[seqnames(B1_gr) == strange_seqnames_4[i]]
+  read_mapped_1B1 = B1_1_gr[seqnames(B1_1_gr) == strange_seqnames_4[i]]
+  read_mapped_1B2 = B1_2_gr[seqnames(B1_2_gr) == strange_seqnames_4[i]]
+  read_mapped_B1_Input = B1_Input_gr[seqnames(B1_Input_gr) == strange_seqnames_4[i]]
+  read_mapped_FS = FS_gr[seqnames(FS_gr) == strange_seqnames_4[i]]
+  read_mapped_FS1 = FS1_gr[seqnames(FS1_gr) == strange_seqnames_4[i]]
+  read_mapped_FS2 = FS2_gr[seqnames(FS2_gr) == strange_seqnames_4[i]]
+  #print(length(a))
+  if (length(read_mapped_B1) >= length(B1_gr)*0.01){
+    print(strange_seqnames_4 + " must be delete of FASTA file reference genome")
+  }
+  if(length(read_mapped_1B1) >= length(B1_1_gr)*0.01){
+    print(strange_seqnames_4 + " must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_1B2) >= length(B1_2_gr)*0.01){
+    print(strange_seqnames_4 + "must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_B1_Input) >= length(B1_Input_gr)*0.01){
+    print(strange_seqnames_4 + "must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_FS) >= length(FS_gr)*0.01){
+    print(strange_seqnames_4 + "must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_FS1) >= length(FS1_gr)*0.01){
+    print(strange_seqnames_4 + "must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_FS2) >= length(FS2_gr)*0.01){
+    print(strange_seqnames_4 + "must be delete of FASTA file reference genome")
+  }
+  if (length(read_mapped_FS_input) >= length(FS_Input_gr)*0.01){
+    print(strange_seqnames_4 + "must be delete of FASTA file reference genome")
+  }  
+}
+```
+
+We conclude that we can keep the FASTA file of the reference genome as it is because there is less than 1% of the reads that map to "strange"  sequences.
+
+# Resize 
+
+```{r, include=FALSE}
+b1_resize = resize(B1_gr,175)
+b1_1_resize= resize(B1_1_gr,175)
+b1_2_resize = resize(B1_2_gr,175)
+b1_input_resize = resize(B1_Input_gr,175)
+fs_resize = resize(FS_gr,170)
+fs_1_resize = resize(FS1_gr,155)
+fs_2_resize = resize(FS2_gr,170)
+fs_input_resize = resize(FS_Input_gr,170)
+
+
+```
+
+# Compute genome-wide coverage
+
+```{r include=FALSE}
+cov_1B = coverage(b1_resize)
+cov_1B1 = coverage(b1_1_resize)
+cov_1B2 = coverage(b1_2_resize)
+cov_1BInput = coverage(b1_input_resize)
+cov_FS = coverage(fs_resize)
+cov_FS1 = coverage(fs_1_resize)
+cov_FS2 = coverage(fs_2_resize)
+cov_FSInput = coverage(fs_input_resize)
+```
+
+
+# Peak calling with MACS
+cf analyse.sh for the command line or Snakemake pipeline 
+
+```{r include=FALSE}
+# B1_peaks = read.table("../macs/macs2_B1_peaks.xls",sep = "\t", comment.char = "#", header = T, stringsAsFactors = F)
+# B1_1_peaks=read.table("../macs/macs2_1B1_peaks.xls",sep = "\t", comment.char = "#",header = T, stringsAsFactors = F)
+# B1_2_peaks = read.table("../macs/macs2_1B2_peaks.xls",sep = "\t", comment.char = "#", header = T, stringsAsFactors = F)
+# FS_1_peaks = read.table("../macs/macs2_FS1_peaks.xls",sep = "\t", comment.char = "#", header = T, stringsAsFactors = F)
+# FS_2_peaks = read.table("../macs/macs2_FS2_peaks.xls", sep = "\t", comment.char = "#", header = T, stringsAsFactors = F)
+# FS_peaks = read.table("../macs/macs2_FS_peaks.xls", sep = "\t", comment.char = "#", header = T, stringsAsFactors = F)
+#FS_peaks
+```
+
+## Convert to GRanges
+
+```{r echo=FALSE}
+B1.peaks = GRanges(seqnames = Rle(B1_peaks[,1]), 
+                     ranges=IRanges(start = B1_peaks[,2],end = B1_peaks[,3], names = B1_peaks[,10]),
+                     strand = Rle(rep("*",nrow(B1_peaks))),
+                     score = B1_peaks[,7],
+                   fold_enrichment = B1_peaks[,8],
+                     seqlengths = seqlengths(b1_resize))
+B1_1.peaks = GRanges(seqnames = Rle(B1_1_peaks[,1]), 
+                     ranges=IRanges(start = B1_1_peaks[,2],end = B1_1_peaks[,3], names = B1_1_peaks[,10]),
+                     strand = Rle(rep("*",nrow(B1_1_peaks))),
+                     score = B1_1_peaks[,7],
+                     seqlengths = seqlengths(b1_1_resize))
+B1_2.peaks = GRanges(seqnames = Rle(B1_2_peaks[,1]), 
+                     ranges=IRanges(start = B1_2_peaks[,2],end = B1_2_peaks[,3], names = B1_2_peaks[,10]),
+                     strand = Rle(rep("*",nrow(B1_2_peaks))),
+                     score = B1_2_peaks[,7],
+                     seqlengths = seqlengths(b1_2_resize))
+FS.peaks = GRanges(seqnames = Rle(FS_peaks[,1]), 
+                     ranges=IRanges(start = FS_peaks[,2],end = FS_peaks[,3], names = FS_peaks[,10]),
+                     strand = Rle(rep("*",nrow(FS_peaks))),
+                     score = FS_peaks[,7],
+                   fold_enrichment = FS_peaks[,8],
+                     seqlengths = seqlengths(fs_resize))
+
+FS_1.peaks = GRanges(seqnames = Rle(FS_1_peaks[,1]), 
+                     ranges=IRanges(start = FS_1_peaks[,2],end = FS_1_peaks[,3], names = FS_1_peaks[,10]),
+                     strand = Rle(rep("*",nrow(FS_1_peaks))),
+                     score = FS_1_peaks[,7],
+                     seqlengths = seqlengths(fs_1_resize))
+FS_2.peaks = GRanges(seqnames = Rle(FS_2_peaks[,1]), 
+                     ranges=IRanges(start = FS_2_peaks[,2],end = FS_2_peaks[,3], names = FS_2_peaks[,10]),
+                     strand = Rle(rep("*",nrow(FS_2_peaks))),
+                     score = FS_2_peaks[,7],
+                     seqlengths = seqlengths(fs_2_resize))
+save.image("Myworkspace.RData")
+
+length(B1.peaks)
+length(B1_1.peaks)
+length(B1_2.peaks)
+length(FS.peaks)
+length(FS_1.peaks)
+length(FS_2.peaks)
+```
+
+# Counting overlaps
+
+```{r echo=FALSE}
+ov_B1_1_B1_2 = table(countOverlaps(B1_1.peaks,B1_2.peaks))
+ov_B1_1_B1_2
+summary(as.factor(ov_B1_1_B1_2))
+
+
+table(countOverlaps(B1_1.peaks,FS_1.peaks))
+table(countOverlaps(B1_2.peaks,FS_2.peaks))
+table(countOverlaps(B1_2.peaks,FS_2.peaks))
+table(countOverlaps(FS_1.peaks,FS_2.peaks))
+table(countOverlaps(FS.peaks, B1.peaks))
+B1_1.peaks$score = as.numeric(B1_1.peaks$score)
+B1_2.peaks$score = as.numeric(B1_2.peaks$score)
+peaksB1 = findOverlapsOfPeaks(B1_1.peaks,B1_2.peaks)
+peaksB1= addMetadata(peaksB1,colNames="score",FUN=mean)
+averagePeakWidth_B1 = mean(width(unlist(GRangesList(peaksB1$peaklist))))
+total = 122653977*0.1/(2*averagePeakWidth_B1)
+vennDiagram(peaksB1$venn_cnt)
+makeVennDiagram(peaksB1, totalTest = total)
+
+FS_1.peaks$score = as.numeric(FS_1.peaks$score)
+FS_2.peaks$score = as.numeric(FS_2.peaks$score)
+peaksFS = findOverlapsOfPeaks(FS_1.peaks,FS_2.peaks)
+peaksFS= addMetadata(peaksFS,colNames="score",FUN=mean)
+averagePeakWidth_FS = mean(width(unlist(GRangesList(peaksFS$peaklist))))
+total = 122653977*0.1/(2*averagePeakWidth_FS)
+vennDiagram(peaksFS$venn_cnt)
+makeVennDiagram(peaksFS,totalTest = total)
+
+```
+
+We observe that the replicates of the ChIPseq experiments for SvbAct and SvbRep separately show good overlaps. We can work with the merging replicate for the rest of the analysis. To obtain these merge file, we used the samtools merge software.  
+
+# Annotation : put peaks in the genomic context 
+
+```{r include=FALSE}
+#data_gene = read.csv("../index/ref_genome.txt",sep = "\t",header = F)
+
+#load("Myworkspace.RData")
+unique(data_gene$V1)
+chr = unique(data_gene$V1)
+data_geneS=data_gene[data_gene[,1]%in%chr,]
+Dm6_gene=GRanges(as.character(data_geneS[,1]),IRanges(data_geneS[,2],data_geneS[,3], names = data_geneS[,5]),strand=as.character(data_geneS[,4]))
+
+```
+
+# For SvbACT (B1 cell line)
+
+```{r}
+table(countOverlaps(B1.peaks,Dm6_gene))
+```
+
+For SvbAct 
+
+631 genes show 0 peak
+4128 peaks have 1 peak 
+709 genes have 2 peaks 
+40 genes have 3 peaks
+4 genes have 4 peaks
+
+
+## With ChipAnnoPeak 
+
+```{r include=FALSE}
+B1_peak_anno = annoPeaks(B1.peaks,Dm6_gene)
+binding_gene =data.frame(B1_peak_anno)
+#write.table(binding_gene_intron$feature,"gene_binding_endSite_svb.txt")
+
+```
+
+# For SvbREP (FS line) 
+
+```{r echo=FALSE}
+FS_peaks_anno=annoPeaks(FS.peaks,Dm6_gene)
+table(countOverlaps(FS.peaks,Dm6_gene))
+```
+
+For SvbRep 
+
+143 genes show 0 peak
+1003 genes show 1 peak
+171 genes show 2 peaks
+7 genes show 3 peaks 
+1 gene show 4 peaks 
+
+To conclude for this part, we observe that SvbAct and SvbRep binding overlaps in
+majority with 1 gene. Now we want to deter;ine the distribution of the peaks on the genome-wide context, more specifically on the promoters or on the TSS.
+
+ 
+```{r}
+Dm6_TSS = flank(Dm6_gene,500,both = T)
+table(countOverlaps(B1.peaks,Dm6_TSS))
+table(countOverlaps(FS.peaks,Dm6_TSS))
+B1_peak_TSS = annoPeaks(B1.peaks,Dm6_TSS)
+
+```
+
+## Extracting profiles around peaks 
+
+### 1B
+
+#### Get view for all peaks
+
+```{r include=FALSE}
+pViews_2L_B = Views(cov_1B[["2L"]],ranges(B1.peaks[seqnames(B1.peaks)=="2L"]))
+pViews_2R_B = Views(cov_1B[["2R"]],ranges(B1.peaks[seqnames(B1.peaks)=="2R"]))
+pViews_3L_B = Views(cov_1B[["3L"]],ranges(B1.peaks[seqnames(B1.peaks)=="3L"]))
+pViews_3R_B = Views(cov_1B[["3R"]],ranges(B1.peaks[seqnames(B1.peaks)=="3R"]))
+pViews_4_B = Views(cov_1B[["4"]],ranges(B1.peaks[seqnames(B1.peaks)=="4"]))
+pViews_X_B = Views(cov_1B[["X"]],ranges(B1.peaks[seqnames(B1.peaks)=="X"]))
+pViews_Y_B=Views(cov_1B[["Y_mapped_Scaffold_18_D1698"]],ranges(B1.peaks[seqnames(B1.peaks)=="Y_mapped_Scaffold_18_D1698"]))
+```
+
+#### Get maximum coverage values and their location 
+
+```{r}
+pViews_wm_B1 = c(viewWhichMaxs(pViews_2L_B),viewWhichMaxs(pViews_2R_B), viewWhichMaxs(pViews_3L_B),viewWhichMaxs(pViews_3R_B),viewWhichMaxs(pViews_4_B),viewWhichMaxs(pViews_X_B),viewWhichMaxs(pViews_Y_B))
+
+pViews_max_B1 = c(viewMaxs(pViews_2L_B),viewMaxs(pViews_2R_B), viewMaxs(pViews_3L_B),viewMaxs(pViews_3R_B),viewMaxs(pViews_4_B),viewMaxs(pViews_X_B),viewMaxs(pViews_Y_B))
+```
+
+#### Build a new GRange with +/- 250bp around peaks
+
+```{r}
+B1_peaks_501 = B1.peaks
+
+start(B1_peaks_501) = pViews_wm_B1-250
+end(B1_peaks_501) = pViews_wm_B1 + 250
+```
+
+#### Profiles for each gene 
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+prof_B1 = rbind(as.matrix(Views(cov_1B[["2L"]],ranges(B1_peaks_501[seqnames(B1_peaks_501)=="2L"]))),
+				as.matrix(Views(cov_1B[["2R"]],ranges(B1_peaks_501[seqnames(B1_peaks_501)=="2R"]))),
+				as.matrix(Views(cov_1B[["3R"]],ranges(B1_peaks_501[seqnames(B1_peaks_501)=="3R"]))),
+				as.matrix(Views(cov_1B[["3L"]],ranges(B1_peaks_501[seqnames(B1_peaks_501)=="3L"]))),
+				as.matrix(Views(cov_1B[["4"]],ranges(B1_peaks_501[seqnames(B1_peaks_501)=="4"]))),
+				as.matrix(Views(cov_1B[["X"]],ranges(B1_peaks_501[seqnames(B1_peaks_501)=="X"]))),
+				as.matrix(Views(cov_1B[["Y_mapped_Scaffold_18_D1698"]],ranges(B1_peaks_501[seqnames(B1_peaks_501)=="Y_mapped_Scaffold_18_D1698"]))))
+
+prof_B1=prof_B1[order(pViews_max_B1,decreasing = F),]
+
+```
+
+#### Build a new GRanges around TSS 
+
+```{r message=FALSE, warning=FALSE}
+
+prof_B1_TSS = rbind(as.matrix(Views(cov_1B[["2L"]],ranges(Dm6_TSS[seqnames(Dm6_TSS)=="2L"]))),
+				as.matrix(Views(cov_1B[["2R"]],ranges(Dm6_TSS[seqnames(Dm6_TSS)=="2R"]))),
+				as.matrix(Views(cov_1B[["3R"]],ranges(Dm6_TSS[seqnames(Dm6_TSS)=="3R"]))),
+				as.matrix(Views(cov_1B[["3L"]],ranges(Dm6_TSS[seqnames(Dm6_TSS)=="3L"]))),
+				as.matrix(Views(cov_1B[["4"]],ranges(Dm6_TSS[seqnames(Dm6_TSS)=="4"]))),
+				as.matrix(Views(cov_1B[["X"]],ranges(Dm6_TSS[seqnames(Dm6_TSS)=="X"]))),
+				as.matrix(Views(cov_1B[["Y"]],ranges(Dm6_TSS[seqnames(Dm6_TSS)=="Y"]))))
+
+prof_B1_TSS = prof_B1_TSS[order(pViews_max_B1,decreasing = F),]
+#View(prof_B1_TSS)
+```
+
+#### SvbREP (FS cell line) 
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+pViews_2L_FS  = Views(cov_FS[["2L"]],ranges(FS.peaks[seqnames(FS.peaks)=="2L"]))
+pViews_2R_FS = Views(cov_FS[["2R"]],ranges(FS.peaks[seqnames(FS.peaks)=="2R"]))
+pViews_3L_FS = Views(cov_FS[["3L"]],ranges(FS.peaks[seqnames(FS.peaks)=="3L"]))
+pViews_3R_FS = Views(cov_FS[["3R"]],ranges(FS.peaks[seqnames(FS.peaks)=="3R"]))
+pViews_4_FS = Views(cov_FS[["4"]],ranges(FS.peaks[seqnames(FS.peaks)=="4"]))
+pViews_X_FS = Views(cov_FS[["X"]],ranges(FS.peaks[seqnames(FS.peaks)=="X"]))
+pViews_Y_FS=Views(cov_FS[["Y"]],ranges(FS.peaks[seqnames(FS.peaks)=="Y"]))
+pViews_wm_FS = c(viewWhichMaxs(pViews_2L_FS),viewWhichMaxs(pViews_2R_FS), viewWhichMaxs(pViews_3L_FS),viewWhichMaxs(pViews_3R_FS),viewWhichMaxs(pViews_4_FS),viewWhichMaxs(pViews_X_FS),viewWhichMaxs(pViews_Y_FS))
+
+pViews_max_FS = c(viewMaxs(pViews_2L_FS),viewMaxs(pViews_2R_FS), viewMaxs(pViews_3L_FS),viewMaxs(pViews_3R_FS),viewMaxs(pViews_4_FS),viewMaxs(pViews_X_FS),viewMaxs(pViews_Y_FS))
+FS_peaks_501 = FS.peaks
+start(FS_peaks_501) = pViews_wm_FS-250
+end(FS_peaks_501) = pViews_wm_FS + 250
+prof_FS = rbind(as.matrix(Views(cov_FS[["2L"]],ranges(FS_peaks_501[seqnames(FS_peaks_501)=="2L"]))),
+				as.matrix(Views(cov_FS[["2R"]],ranges(FS_peaks_501[seqnames(FS_peaks_501)=="2R"]))),
+				as.matrix(Views(cov_FS[["3R"]],ranges(FS_peaks_501[seqnames(FS_peaks_501)=="3R"]))),
+				as.matrix(Views(cov_FS[["3L"]],ranges(FS_peaks_501[seqnames(FS_peaks_501)=="3L"]))),
+				as.matrix(Views(cov_FS[["4"]],ranges(FS_peaks_501[seqnames(FS_peaks_501)=="4"]))),
+				as.matrix(Views(cov_FS[["X"]],ranges(FS_peaks_501[seqnames(FS_peaks_501)=="X"])))
+				)
+dim(prof_FS)
+prof_FS=prof_FS[order(pViews_max_FS,decreasing = F),]
+#head(prof_FS)#coverage pic moyen 
+prof_FS_TSS = rbind(as.matrix(Views(cov_FS[["2L"]],ranges(Dm6_TSS[seqnames(Dm6_TSS)=="2L"]))),
+				as.matrix(Views(cov_FS[["2R"]],ranges(Dm6_TSS[seqnames(Dm6_TSS)=="2R"]))),
+				as.matrix(Views(cov_FS[["3R"]],ranges(Dm6_TSS[seqnames(Dm6_TSS)=="3R"]))),
+				as.matrix(Views(cov_FS[["3L"]],ranges(Dm6_TSS[seqnames(Dm6_TSS)=="3L"]))),
+				as.matrix(Views(cov_FS[["4"]],ranges(Dm6_TSS[seqnames(Dm6_TSS)=="4"]))),
+				as.matrix(Views(cov_FS[["X"]],ranges(Dm6_TSS[seqnames(Dm6_TSS)=="X"]))),
+				as.matrix(Views(cov_FS[["Y"]],ranges(Dm6_TSS[seqnames(Dm6_TSS)=="Y"]))))
+prof_FS_TSS = prof_FS_TSS[order(pViews_max_B1,decreasing = F),]
+average_moyen_FS_TSS=as.matrix(apply(prof_FS_TSS,1,mean))
+colnames(average_moyen_FS_TSS)="average coverage FS_TSS"
+average_moyen_B1_TSS=as.matrix(apply(prof_B1_TSS,1,mean))
+colnames(average_moyen_B1_TSS) = "average coverage 1B_TSS"
+#save.image("Myworkspace.RData")
+#load("Myworkspace.RData")
+#saveRDS(prof_B1_TSS_2,file = "profil_1B_TSS_2.rds")
+#saveRDS(prof_FS_TSS_2, file ="profil_FS_TSS_2.rds")
+#write.table(average_moyen_FS_TSS,"average_coverage_FS_TSS.txt")
+#write.table(average_moyen_B1_TSS,"average_coverage_B1_TSS.txt")
+# dim(prof_B1_TSS)
+# length(c)
+# i = 0
+# chro = list()
+# for (i in 1:length(c)){
+#   chro[[i]] = (as.character(c[[i]]))
+# }
+# 
+# prof_B1_TSS_2 = rbind(as.matrix(Views(cov_1B[[chro[[48]]]],ranges(Dm6_TSS[seqnames(Dm6_TSS)==chro[[48]]]))),
+# 			as.matrix(Views(cov_1B[[chro[[49]]]],ranges(Dm6_TSS[seqnames(Dm6_TSS)==chro[[49]]]))),
+# 			as.matrix(Views(cov_1B[[chro[[50]]]],ranges(Dm6_TSS[seqnames(Dm6_TSS)==chro[[50]]]))),
+# 			as.matrix(Views(cov_1B[[chro[[51]]]],ranges(Dm6_TSS[seqnames(Dm6_TSS)==chro[[51]]]))),
+# 			as.matrix(Views(cov_1B[[chro[[52]]]],ranges(Dm6_TSS[seqnames(Dm6_TSS)==chro[[52]]]))),
+# 			as.matrix(Views(cov_1B[[chro[[53]]]],ranges(Dm6_TSS[seqnames(Dm6_TSS)==chro[[53]]]))),
+# 			as.matrix(Views(cov_1B[[chro[[54]]]],ranges(Dm6_TSS[seqnames(Dm6_TSS)==chro[[54]]]))),
+# 			as.matrix(Views(cov_1B[[chro[[55]]]],ranges(Dm6_TSS[seqnames(Dm6_TSS)==chro[[55]]]))),
+#       as.matrix(Views(cov_1B[[chro[[56]]]],ranges(Dm6_TSS[seqnames(Dm6_TSS)==chro[[56]]]))),
+#       as.matrix(Views(cov_1B[[chro[[57]]]],ranges(Dm6_TSS[seqnames(Dm6_TSS)==chro[[57]]]))))
+# 
+# dim(prof_B1_TSS_2)
+# prof_FS_TSS_2 = rbind(as.matrix(Views(cov_FS[[chro[[48]]]],ranges(Dm6_TSS[seqnames(Dm6_TSS)==chro[[48]]]))),
+# 			as.matrix(Views(cov_FS[[chro[[49]]]],ranges(Dm6_TSS[seqnames(Dm6_TSS)==chro[[49]]]))),
+# 			as.matrix(Views(cov_FS[[chro[[50]]]],ranges(Dm6_TSS[seqnames(Dm6_TSS)==chro[[50]]]))),
+# 			as.matrix(Views(cov_FS[[chro[[51]]]],ranges(Dm6_TSS[seqnames(Dm6_TSS)==chro[[51]]]))),
+# 			as.matrix(Views(cov_FS[[chro[[52]]]],ranges(Dm6_TSS[seqnames(Dm6_TSS)==chro[[52]]]))),
+# 			as.matrix(Views(cov_FS[[chro[[53]]]],ranges(Dm6_TSS[seqnames(Dm6_TSS)==chro[[53]]]))),
+# 			as.matrix(Views(cov_FS[[chro[[54]]]],ranges(Dm6_TSS[seqnames(Dm6_TSS)==chro[[54]]]))),
+# 			as.matrix(Views(cov_FS[[chro[[55]]]],ranges(Dm6_TSS[seqnames(Dm6_TSS)==chro[[55]]]))),
+#       as.matrix(Views(cov_FS[[chro[[56]]]],ranges(Dm6_TSS[seqnames(Dm6_TSS)==chro[[56]]]))),
+#       as.matrix(Views(cov_FS[[chro[[57]]]],ranges(Dm6_TSS[seqnames(Dm6_TSS)==chro[[57]]]))))
+# 
+# dim(prof_FS_TSS_2)
+# average_moyen_FS_TSS=as.matrix(apply(prof_FS_TSS_2,1,mean))
+# colnames(average_moyen_FS_TSS)="average coverage FS_TSS"
+# dim(average_moyen_FS_TSS)
+# #B1.peaks
+# average_moyen_B1_TSS=as.matrix(apply(prof_B1_TSS_2,1,mean))
+#colnames(average_moyen_B1_TSS) = "average coverage 1B_TSS"
+# #write.table(average_moyen_FS_TSS,"average_coverage_FS_TSS_2.txt")
+# #write.table(average_moyen_B1_TSS,"average_coverage_B1_TSS_2.txt")
+```
+
+The switch to SvbRep into SvbAct is a posttraductionnal cut of the N-terminal domain mediated by the proteasome in presence of Pri peptides. The C-terminal domain which contains the binding domain is the same between the 2 forms of Svb. Moreover we observe a similar behaviour of the binding events for SvbAct and SvbRep , so we supposed that SvbAct and SvbRep bind to the same loci. To prove that we search if SvbAct and SvbRep show overlapping regions. 
+
+
+## Searching overlaps between SvbAct and SvbRep 
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+ah = AnnotationHub()
+dro=query(ah, c("Ensembl", "Drosophila melanogaster"))
+df <- mcols(dro)
+droso = dro[["AH50985"]]
+droso_a=as.data.frame(droso)
+drs=toGRanges(droso_a,feature ="gene_id")
+annoData = toGRanges(TxDb.Dmelanogaster.UCSC.dm6.ensGene)
+
+
+
+overlap_of_peaks_ActvsRep = findOverlapsOfPeaks(B1.peaks,FS.peaks,connectedPeaks = "keepAll")
+overlaps_common_ActvsRep = overlap_of_peaks_ActvsRep$peaklist$`B1.peaks///FS.peaks`
+overlaps_common
+overlap_of_peaks_ActvsRep$peaklist$`B1.peaks///FS.peaks`
+
+
+aCR_common<-assignChromosomeRegion(overlaps_common_ActvsRep, nucleotideLevel=FALSE, 
+                           precedence=c("Promoters", "immediateDownstream", 
+                                         "fiveUTRs", "threeUTRs", 
+                                         "Exons", "Introns"), 
+                           TxDb=TxDb.Dmelanogaster.UCSC.dm6.ensGene)
+
+overlaps.anno.common<- annotatePeakInBatch(overlaps_common, 
+                                     AnnotationData=Dm6_gene, 
+                                     output="nearestBiDirectionalPromoters",
+                                     bindingRegion=c(-2000, 500))
+
+
+pool = new("permPool",grs =GRangesList(Dm6_gene), N = length(B1.peaks))
+pt1 = peakPermTest(FS.peaks,B1.peaks,pool = pool, TxDb = TxDb.Dmelanogaster.UCSC.dm6.ensGene, seed = 1234, force.parallel = FALSE)
+overlaps_common_ActvsRep_tab = as.data.frame(overlaps_common_ActvsRep)
+overlaps_common_ActvsRep_tab = overlaps_common_ActvsRep_tab[,1:4]
+#write.table(overlaps_common_ActvsRep, "peaks_commun_ActRep.bed", row.names = F)
+```
+
+
+```{r, warning=FALSE}
+binOverFeature(overlaps_common, annotationData = annoData, radius = 4000, nbins = 20, FUN = length , errFun = 0,ylab = "count", xlab = "Distance to TSS", main = "Distribution of aggregated peaks around TSS")
+makeVennDiagram(overlap_of_peaks_ActvsRep, connectedPeaks = "keepAll" )
+```
+
+```{r}
+#vennDiagram(overlap_of_peaks_ActvsRep$venn_cnt)
+
+barplot(aCR_common$percentage, las=3, main = "Sites de fixation de Shavenbaby")
+plot(pt1)
+pie1(table(overlaps.anno.common$insideFeature))
+#gtf = read.table("/Volumes/Promise\ RAID/Work/Alex_analyse/chipseq/index/dmel-all-r6.13.gtf", sep = "\t")
+exon_data = gtf[gtf$V3=="exon",]
+utr5_data = gtf[gtf$V3=="5UTR",]
+utr3_data = gtf[gtf$V3=="3UTR",]
+aCR_Svb<-assignChromosomeRegion(B1.peaks, exon, Dm6_TSS, utr5_data,utr3_data, nucleotideLevel=FALSE, 
+                                   precedence=c("Promoters", "immediateDownstream", 
+                                                "fiveUTRs", "threeUTRs", 
+                                                "Exons", "Introns"), 
+                                   TxDb=TxDb.Dmelanogaster.UCSC.dm6.ensGene)
+
+pie1(aCR_Svb$percentage)
+```
+
+### Average profiles 
+
+```{r}
+
+plot(-250:250, apply(prof_B1,2,mean),
+     type="l",
+     xlab="distance to peak center (bp)",
+     ylab = "coverage",
+     main = "Average B1 peaks")
+
+plot(-250:250, apply(prof_FS,2,mean),
+     type="l",
+     xlab="distance to peak center (bp)",
+     ylab = "coverage",
+     main = "Average FS peaks")
+```
+
+
+We can observe that SvbAct and SvbRep bind in regions around the TSS and on introns. 
+
+On drosophila these regions are known to be enriched on enhancer. 
+
+
+# Intensity of binding and comparison 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#write.table(overlappingPeaks, file = "overlappingPeak.txt")
+uniquePeak = data.frame(overlap_of_peaks_ActvsRep$uniquePeaks, row.names = names(ranges(overlap_of_peaks_ActvsRep$uniquePeaks)))
+
+alignementFS = data.frame(FS_gr)
+
+
+#write.table(alignementFS, file = "alignementFS.txt")
+```
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+hist(B1_peaks$pileup,col="green", xlab = "Intensity of peaks")
+
+hist(FS_peaks$pileup,add=TRUE,col ="red")
+
+```
+
+```{r}
+boxplot(B1_peaks$pileup,FS_peaks$pileup, names=c("Intensity of B1 peaks", "Intensity of FS peaks"), main = "Intensity of peaks  ")
+wilcox.test(B1_peaks$pileup, FS_peaks$pileup)
+t.test(B1_peaks$pileup,FS_peaks$pileup)
+```
+
+We observe statistically less intensity of SvbRep peaks than SvbAct peaks.
+As we also observe the fact that the majoriry of SvbRep peaks are included on SvbAct population, we can suppose that the SvbAct peaks without SvbRep peaks are not really without SvbRep peaks, this populatin is called SvbAct-only. The absence of SvbRep peaks can be due by the peaks detection threshold on macs2. 
+
+
+As we detect less peaks of SvbRep condition we use a homemade python to calculate the coverage of SvbRep on SvbAct regions. This python script also calculate the ratio of intensity between SvbRep and SvbAct on the population detected as overlapping regions and the population called SvbAct-only
+
+
+
+## Loading of the ratio 
+
+```{r echo=FALSE}
+ratio_overlaps = read.table("/Users/alexmanchenoferris/Documents/Chipseq_ActRep/python_parser/stringent/ratio_intensity_peak_overlap.txt", header = TRUE)
+ratio_alone = read.table("//Users/alexmanchenoferris/Documents/Chipseq_ActRep/python_parser/stringent/ratio_intensity_peak_unique.txt", header = TRUE)
+intensity_overlaps_1B = ratio_overlaps$pileup_B1
+intensity_overlaps_FS = ratio_overlaps$pileup_FS
+intensity_alone_1B = ratio_alone$pileup_B1
+intensity_alone_FS = ratio_alone$nb_read_FS
+
+ratio_alone = ratio_alone[,-2:-3]
+ratio_overlaps = ratio_overlaps[,-2:-3]
+boxplot(ratio_overlaps$ratio, ratio_alone$ratio, outline = FALSE, main = " Nombre de reads dans FS par rapport aux peaks détectés dans 1B par MACS", names = c("Ratio peaks overlaps", 'Ratio peaks "alone"'))
+
+hist(intensity_overlaps_1B,col="green", xlab = "Intensity", main = "Intensity of overlapping peaks ")
+
+
+hist(intensity_overlaps_FS,add=TRUE,col ="red")
+
+
+hist(intensity_alone_FS,col="red", xlab = "Intensity",main = "Intensity of 'alone' peaks ",breaks = 50)
+
+
+hist(intensity_alone_1B,add=TRUE,col ="green",breaks = 10)
+
+
+t.test(ratio_alone$ratio,ratio_overlaps$ratio)
+
+tab_int_stringent = merge(ratio_alone,int_alone_FS_low , all = T)
+tab_int_stringent = merge(tab_int_stringent, int_overlaps_1B_low, all = T)
+tab_int_stringent = merge(tab_int_stringent, int_overlaps_FS_low, all = T)
+ggviolin(tab_int_stringent, x = "Cond",y = "intensity", color = "Cond", facet.by = "Group",palette = c("red","green"), add = "boxplot") +scale_y_continuous(trans = 'pseudo_log')  + rotate_x_text(angle = 45) 
+
+ratio_overlaps_amerger = ratio_overlaps
+ratio_overlaps_amerger$Group = "Common"
+colnames(ratio_overlaps_amerger) = c("Peaks","ratio","Group")
+ratio_alone_amerger = ratio_alone
+ratio_alone_amerger$Group = "SvbACT_only"
+colnames(ratio_alone_amerger) = c("Peaks","ratio","Group")
+
+tab_ratio = merge(ratio_alone_amerger, ratio_overlaps_amerger, all = T)
+ggviolin(tab_ratio, x = "Group",y = "ratio", color = "Group",palette = c("pink","orange"), add = "boxplot") +scale_y_continuous(trans = 'pseudo_log')  + rotate_x_text(angle = 45) + ggtitle("Ratio (pseudo log) intensity stringent condition") 
+int_alone_1B = as.data.frame(intensity_alone_1B)
+int_alone_1B$Cond = "SvbACT"
+int_alone_1B$Group = "SvbACT_only"
+colnames(int_alone_1B) = c("intensity","Cond","Group")
+head(int_alone_1B)
+
+
+int_alone_FS = as.data.frame(intensity_alone_FS)
+int_alone_FS$Cond = "SvbREP"
+int_alone_FS$Group = "SvbACT_only"
+colnames(int_alone_FS) = c("intensity","Cond","Group")
+head(int_alone_FS)
+
+int_overlaps_1B = as.data.frame(intensity_overlaps_1B)
+int_overlaps_1B$Cond = "SvbACT"
+int_overlaps_1B$Group = "Common"
+colnames(int_overlaps_1B) = c("intensity","Cond","Group")
+
+int_overlaps_FS = as.data.frame(intensity_overlaps_FS)
+int_overlaps_FS$Cond = "SvbREP"
+int_overlaps_FS$Group = "Common"
+colnames(int_overlaps_FS) = c("intensity","Cond","Group")
+
+tab_int= merge(int_alone_1B,int_alone_FS , all = T)
+tab_int = merge(tab_int, int_overlaps_1B, all = T)
+tab_int = merge(tab_int, int_overlaps_FS, all = T)
+head( tab_int)
+ggviolin(tab_int, x = "Cond",y = "intensity", color = "Cond", facet.by = "Group",palette = c("red","green"), add = "boxplot") +scale_y_continuous(trans = 'pseudo_log')  + rotate_x_text(angle = 45) 
+```
+
+
+Means are statiscally equals, we can conclude the SvbAct-only population is just due by the threshold of detection of peaks of MACS2. This population show SvbRep  and SvbAct bindings. We conclude SvbAct and SvbRep bind at the same loci.
+
+
+
+# 07/06/2018
+
+Here we look the count of reads on the SvbAct-only, overlapping and outside-peaks. 
+```{r}
+align_outside_peak_FS = FS_gr[overlapsAny(FS_gr,FS.peaks) == FALSE]
+align_outside_peak_1B = overlapsAny(B1_gr,B1.peaks) == FALSE
+nb_read_outside_peaks_FS = log10(length(align_outside_peak_FS))
+nb_read_outside_peaks_1B = log10(length(align_outside_peak_1B))
+boxplot(log10(ratio_alone$pileup_B1),log10(ratio_alone$nb_read_FS), log10(ratio_overlaps$pileup_B1) , log10(ratio_overlaps$pileup_FS), outline = F, main = "number of reads on the different conditions ", names= c("reads SvbACT", "reads SvbREP", "reads SvbACT" , "reads SvbREP"))
+```
+
+# Fragments sizes 
+
+```{r}
+fraglen = estimate.mean.fraglen(B1_gr,method = "correlation")
+frag = as.table(fraglen)
+mean(fraglen[!is.na(fraglen)])
+save.image("Myworkspace.RData")
+plot(density(width(B1.peaks)))
+summary(width(B1.peaks))
+```
+
+
+
+# Conclusion 
+
+We can see that the ChIpseq B1 and FS data are of high quality, we observe that Shavenbaby in Act form and in Rep form have common targets (there is an overlap concerning 1259 peaks). These overlapping peaks are not due to chance because after performing a permutation test we obtain a p-value of 0.0099 and a Z-score of 120.271 which confirms that this is a single population.  
+
+
+
+## 16/04/2019
+As we conclude SvbAct and SvbRep are the same population and for the histone analysis we need a lower threshold of peaks detection (0.1), we rerun the peaks detectin with lower threshold and performed the same analysis of before to obtain the different population SvbAct , common. 
+
+
+```{r}
+SvbACT_peaks_low = read.table("/Users/alexmanchenoferris/Documents/Chipseq_ActRep/macs/low_quality/macs_1B_peaks.xls",sep = "\t", comment.char = "#", header = T, stringsAsFactors = F)
+
+SvbACT.peaks_low = GRanges(seqnames = Rle(SvbACT_peaks_low[,1]), 
+                     ranges=IRanges(start = SvbACT_peaks_low[,2],end = SvbACT_peaks_low[,3], names = SvbACT_peaks_low[,10]),
+                     strand = Rle(rep("*",nrow(SvbACT_peaks_low))),
+                     score = SvbACT_peaks_low[,7],
+                   fold_enrichment = SvbACT_peaks_low[,8],
+                     seqlengths = seqlengths(b1_resize))
+
+
+Svb_TSS_2 = findOverlappingPeaks(SvbACT.peaks_low,Dm6_TSS)
+peaks_TSS_Svb = Svb_TSS_2$peaklist$`Peaks1///Peaks2`
+peak_Svb_seul = Svb_TSS_2$peaklist$Peaks1
+Svb_seul_tab = as.data.frame(peak_Svb_seul)
+#write.table(Svb_seul_tab[,1:4],"/Volumes/Promise\ RAID/Work/Alex_analyse/chipseq/Svb_peaks_pasTSS.bed",quote = F, row.names = F)
+Svb_TSS_tab = as.data.frame(peaks_TSS_Svb)
+#write.table(Svb_TSS_tab,"/Volumes/Promise\ RAID/Work/Alex_analyse/chipseq/Svb_auTSS.bed",quote = F, row.names = F)
+```
+
+
+```{r}
+SvbREP_peaks_low = read.table("//Users/alexmanchenoferris/Documents/Chipseq_ActRep/macs/low_quality/macs_FS_peaks.xls",sep = "\t", comment.char = "#", header = T, stringsAsFactors = F)
+
+SvbREP.peaks_low = GRanges(seqnames = Rle(SvbREP_peaks_low[,1]), 
+                     ranges=IRanges(start = SvbREP_peaks_low[,2],end = SvbREP_peaks_low[,3], names = SvbREP_peaks_low[,10]),
+                     strand = Rle(rep("*",nrow(SvbREP_peaks_low))),
+                     score = SvbREP_peaks_low[,7],
+                   fold_enrichment = SvbREP_peaks_low[,8],
+                     seqlengths = seqlengths(fs_resize))
+
+
+```
+
+# Comparison 
+
+```{r}
+
+peaksSvbACTSvbREP = findOverlapsOfPeaks(SvbACT.peaks_low,SvbREP.peaks_low, connectedPeaks = "keepAll")
+peaksSvbACTSvbREP = addMetadata(peaksSvbACTSvbREP,colNames="score",FUN=mean)
+averagePeakWidth_SvbACTSvbREP = mean(width(unlist(GRangesList(peaksSvbACTSvbREP$peaklist))))
+total = 122653977*0.1/(2*averagePeakWidth_SvbACTSvbREP)
+vennDiagram(peaksSvbACTSvbREP$venn_cnt)
+makeVennDiagram(peaksSvbACTSvbREP, totalTest = total, connectedPeaks = "keepAll")
+
+
+peaksSvbACTSvbREP_commun = peaksSvbACTSvbREP$peaklist$`SvbACT.peaks_low///SvbREP.peaks_low`
+tab_SvbACTSvbREP_commun  = as.data.frame(peaksSvbACTSvbREP$peaklist$`SvbACT.peaks_low///SvbREP.peaks_low`)
+tab_SvbACTSvbREP_commun = tab_SvbACTSvbREP_commun[,-4:-5]
+tab_SvbACTSvbREP_commun = tab_SvbACTSvbREP_commun[,-5:-6]
+
+#write.table(tab_SvbACTSvbREP_commun,"peaksCommun_SvbACT_SvbREP_low.txt",sep ="\t",quote = F,row.names = F)
+
+
+
+
+peaksSvbACTSvbREP_SvbACTonly = peaksSvbACTSvbREP$peaklist$SvbACT.peaks_low
+tab_SvbACTSvbREP_SvbACTonly  = as.data.frame(peaksSvbACTSvbREP$peaklist$SvbACT.peaks_low)
+tab_SvbACTSvbREP_SvbACTonly = tab_SvbACTSvbREP_SvbACTonly[,-4:-5]
+head(tab_SvbACTSvbREP_SvbACTonly)
+tab_SvbACTSvbREP_SvbACTonly = tab_SvbACTSvbREP_SvbACTonly[,-5:-6]
+
+#write.table(tab_SvbACTSvbREP_SvbACTonly,"peaksSvbACT_only_SvbACT_SvbREP_low.txt",sep ="\t",quote = F,row.names = F)
+
+
+peaksSvbACTSvbREP_SvbREPonly = peaksSvbACTSvbREP$peaklist$SvbREP.peaks_low
+tab_SvbACTSvbREP_SvbREPonly  = as.data.frame(peaksSvbACTSvbREP$peaklist$SvbREP.peaks_low)
+tab_SvbACTSvbREP_SvbREPonly = tab_SvbACTSvbREP_SvbREPonly[,-4:-5]
+head(tab_SvbACTSvbREP_SvbREPonly)
+tab_SvbACTSvbREP_SvbREPonly = tab_SvbACTSvbREP_SvbREPonly[,-5]
+
+#write.table(tab_SvbACTSvbREP_SvbREPonly,"low_regions/peaksSvbREP_only_SvbACT_SvbREP_low.txt",sep ="\t",quote = F,row.names = F)
+```
+
+## 02/07/2019
+
+## Boxplot read count ( low quality)
+
+```{r}
+#cov_communPeak = read.table("/Volumes/Promise\ RAID/Work/Alex_analyse/chipseq/Enrichment_Different_Regions/multiCov/coverage_SvbACT_InputACT_SvbREP_InputREP_communPeakSvbACT_SvbREP.txt", sep = "\t")
+colnames(cov_communPeak) = c("chr","start","end","name","SvbACT","Input_SvbACT","SvbREP","Input_SvbREP")
+cov_communPeak$condition = "Commun Peak"
+cov_communPeak = cov_communPeak[,-4]
+
+#cov_PeakACTonly = read.table("/Volumes/Promise\ RAID/Work/Alex_analyse/chipseq/Enrichment_Different_Regions/multiCov/coverage_SvbACT_InputACT_SvbREP_InputREP_SvbAct_only.txt", sep = "\t")
+head(cov_PeakACTonly)
+colnames(cov_PeakACTonly) = c("chr","start","end","name","SvbACT","Input_SvbACT","SvbREP","Input_SvbREP")
+cov_PeakACTonly$condition = "SvbACT only"
+cov_PeakACTonly = cov_PeakACTonly[,-4]
+
+#cov_PeakREPonly = read.table("/Volumes/Promise\ RAID/Work/Alex_analyse/chipseq/Enrichment_Different_Regions/multiCov/coverage_SvbACT_InputACT_SvbREP_InputREP_SvbREP_only.txt",sep = "\t")
+colnames(cov_PeakREPonly) = c("chr","start","end","name","SvbACT","Input_SvbACT","SvbREP","Input_SvbREP")
+cov_PeakREPonly$condition = "SvbREP only"
+cov_PeakREPonly = cov_PeakREPonly[,-4]
+
+#cov_PeakAct_total = read.table("/Volumes/Promise\ RAID/Work/Alex_analyse/chipseq/Enrichment_Different_Regions/multiCov/coverage_SvbACT_InputACT_SvbREP_InputREP_SvbACT.txt", sep = "\t")
+cov_PeakAct_total = cov_PeakAct_total[,-5:-10]
+colnames(cov_PeakAct_total) = c("chr","start","end","name","SvbACT","Input_SvbACT","SvbREP","Input_SvbREP")
+cov_PeakAct_total$condition = "SvbACT"
+cov_PeakAct_total = cov_PeakAct_total[,-4]
+
+
+cov_PeakRep_total = read.table("/Volumes/Promise\ RAID/Work/Alex_analyse/chipseq/Enrichment_Different_Regions/multiCov/coverage_SvbACT_InputACT_SvbREP_InputREP_SvbREP.txt", sep = "\t")
+cov_PeakRep_total = cov_PeakRep_total[,-5:-10]
+colnames(cov_PeakRep_total) = c("chr","start","end","name","SvbACT","Input_SvbACT","SvbREP","Input_SvbREP")
+cov_PeakRep_total$condition = "SvbREP"
+cov_PeakRep_total =cov_PeakRep_total[,-4]
+
+
+cov_PeakShift = read.table("/Volumes/Promise\ RAID/Work/Alex_analyse/chipseq/Enrichment_Different_Regions/multiCov/coverage_SvbACT_InputACT_SvbREP_InputREP_shift.txt",sep = "\t")
+colnames(cov_PeakShift) = c("chr","start","end","name","SvbACT","Input_SvbACT","SvbREP","Input_SvbREP")
+cov_PeakShift$condition = "Svb Shift"
+cov_PeakShift = cov_PeakShift[,-4]
+
+
+cov_PeakRandom = read.table("/Volumes/Promise\ RAID/Work/Alex_analyse/chipseq/Enrichment_Different_Regions/multiCov/coverage_SvbACT_InputACT_SvbREP_InputREP_random.txt", sep = "\t")
+colnames(cov_PeakRandom) = c("chr","start","end","SvbACT","Input_SvbACT","SvbREP","Input_SvbREP")
+cov_PeakRandom$condition = "Svb Random"
+
+
+boxplot(cov_PeakAct_total$SvbACT, cov_PeakAct_total$SvbREP, cov_PeakAct_total$Input_SvbACT, cov_PeakAct_total$Input_SvbREP,cov_PeakRep_total$SvbACT, cov_PeakRep_total$SvbREP, cov_PeakRep_total$Input_SvbACT, cov_PeakRep_total$Input_SvbREP,cov_communPeak$SvbACT,cov_communPeak$SvbREP,cov_communPeak$Input_SvbACT,cov_communPeak$Input_SvbREP, cov_PeakACTonly$SvbACT,cov_PeakACTonly$SvbREP,cov_PeakACTonly$Input_SvbACT,cov_PeakACTonly$Input_SvbREP,cov_PeakREPonly$SvbACT, cov_PeakREPonly$SvbREP,cov_PeakREPonly$Input_SvbACT,cov_PeakREPonly$Input_SvbREP,cov_PeakShift$SvbACT,cov_PeakShift$SvbREP,cov_PeakShift$Input_SvbACT,cov_PeakShift$Input_SvbREP,cov_PeakRandom$SvbACT+1,cov_PeakRandom$SvbREP+1,cov_PeakRandom$Input_SvbACT+1,cov_PeakRandom$Input_SvbREP+1, ylab = "coverage",log = "y", col = c("green","red","orange","yellow","green","red","orange","yellow","green","red","orange","yellow","green","red","orange","yellow","green","red","orange","yellow","green","red","orange","yellow","green","red","orange","yellow"),las = 2,cex.axis= 0.7, main = "Coverage of read on the differents populations of peaks")
+legend(0.5,100000,"SvbACT",bty = "n")
+legend(4.5,100000,"SvbREP", bty ="n")
+legend(8.5,100000,"Common", bty ="n")
+legend(12.5,100000,"SvbACT only ", bty ="n")
+legend(16.5,100000,"SvbREP only ", bty ="n")
+legend(20.5,100000,"Svb Shift", bty = "n")
+legend(24.5,3500000,"Svb Random",bty = "n")
+legend("bottomleft",legend = c("SvbACT","SvbREP", "Input SvbACT","Input SvbREP"), pch = c(19,19,19,19), col = c("green","red","orange","yellow") , text.col = "black")
+
+
+library(ggplot2)
+library(ggpubr)
+
+cov_read_ggplot_condACT_peakACT_total = as.data.frame(cov_PeakAct_total$SvbACT)
+cov_read_ggplot_condACT_peakACT_total$condition = "SvbACT"
+cov_read_ggplot_condACT_peakACT_total$Peak_group = "Peak SvbACT"
+colnames(cov_read_ggplot_condACT_peakACT_total) = c("coverage","condition","Peak")
+
+
+cov_read_ggplot_condREP_peakACT_total = as.data.frame(cov_PeakAct_total$SvbREP)
+cov_read_ggplot_condREP_peakACT_total$condition = "SvbREP"
+cov_read_ggplot_condREP_peakACT_total$Peak_group = "Peak SvbACT"
+colnames(cov_read_ggplot_condREP_peakACT_total) =c("coverage","condition", "Peak")
+
+cov_read_ggplot_condInputAct_peakACT_total = as.data.frame(cov_PeakAct_total$Input_SvbACT)
+cov_read_ggplot_condInputAct_peakACT_total$condition = "Input SvbACT"
+cov_read_ggplot_condInputAct_peakACT_total$Peak_goup = "Peak SvbACT"
+colnames(cov_read_ggplot_condInputAct_peakACT_total) =c("coverage","condition", "Peak")
+
+cov_read_ggplot_condInputRep_peakACT_total = as.data.frame(cov_PeakAct_total$Input_SvbREP)
+cov_read_ggplot_condInputRep_peakACT_total$condition = "Input SvbREP"
+cov_read_ggplot_condInputRep_peakACT_total$Peak_Group = "Peak SvbACT"
+colnames(cov_read_ggplot_condInputRep_peakACT_total) =c("coverage","condition", "Peak")
+
+
+cov_read_ggplot_condACT_peakREP_total = as.data.frame(cov_PeakRep_total$SvbACT)
+cov_read_ggplot_condACT_peakREP_total$condition = "SvbACT"
+cov_read_ggplot_condACT_peakREP_total$Peak_Group = "Peak SvbREP"
+colnames(cov_read_ggplot_condACT_peakREP_total) = c("coverage","condition", "Peak")
+
+cov_read_ggplot_condREP_peakREP_total = as.data.frame(cov_PeakRep_total$SvbREP)
+cov_read_ggplot_condREP_peakREP_total$condition = "SvbREP"
+cov_read_ggplot_condREP_peakREP_total$Peak_Group = "Peak SvbREP"
+colnames(cov_read_ggplot_condREP_peakREP_total) = c("coverage","condition", "Peak")
+
+
+cov_read_ggplot_condInputACT_peakREP_total = as.data.frame(cov_PeakRep_total$Input_SvbACT)
+cov_read_ggplot_condInputACT_peakREP_total$condition = "Input SvbACT"
+cov_read_ggplot_condInputACT_peakREP_total$Peak_Group = "Peak SvbREP"
+colnames(cov_read_ggplot_condInputACT_peakREP_total) = c("coverage", "condition", "Peak")
+
+cov_read_ggplot_condInputREP_peakREP_total = as.data.frame(cov_PeakRep_total$Input_SvbREP)
+cov_read_ggplot_condInputREP_peakREP_total$condition = "Input SvbREP"
+cov_read_ggplot_condInputREP_peakREP_total$Peak_Group = "Peak SvbREP"
+colnames(cov_read_ggplot_condInputREP_peakREP_total) = c("coverage", "condition", "Peak")
+
+cov_read_ggplot_condACT_peakACT_only = as.data.frame(cov_PeakACTonly$SvbACT)
+cov_read_ggplot_condACT_peakACT_only$condition = "SvbACT"
+cov_read_ggplot_condACT_peakACT_only$Peak_Group = "Peak SvbACT only"
+colnames(cov_read_ggplot_condACT_peakACT_only) = c("coverage","condition","Peak")
+
+cov_read_ggplot_condREP_peakACT_only = as.data.frame(cov_PeakACTonly$SvbREP)
+cov_read_ggplot_condREP_peakACT_only$condition = "SvbREP"
+cov_read_ggplot_condREP_peakACT_only$Peak_Group = "Peak SvbACT only"
+colnames(cov_read_ggplot_condREP_peakACT_only) = c("coverage","condition","Peak")
+
+cov_read_ggplot_condInputACT_peakACT_only = as.data.frame(cov_PeakACTonly$Input_SvbACT)
+cov_read_ggplot_condInputACT_peakACT_only$condition = "Input SvbACT"
+cov_read_ggplot_condInputACT_peakACT_only$Peak_Group = "Peak SvbACT only"
+colnames(cov_read_ggplot_condInputACT_peakACT_only) =  c("coverage","condition","Peak")
+
+cov_read_ggplot_condInputRep_peakACT_only = as.data.frame(cov_PeakACTonly$Input_SvbREP)
+cov_read_ggplot_condInputRep_peakACT_only$condition = "Input SvbREP"
+cov_read_ggplot_condInputRep_peakACT_only$Peak_Group = "Peak SvbACT only"
+colnames(cov_read_ggplot_condInputRep_peakACT_only) =  c("coverage","condition","Peak")
+
+cov_read_ggplot_condACT_peakREP_only = as.data.frame(cov_PeakREPonly$SvbACT)
+cov_read_ggplot_condACT_peakREP_only$condition = "SvbACT"
+cov_read_ggplot_condACT_peakREP_only$Peak_Group = "Peak SvbREP only"
+colnames(cov_read_ggplot_condACT_peakREP_only) = c("coverage","condition","Peak")
+
+cov_read_ggplot_condREP_peakREP_only = as.data.frame(cov_PeakREPonly$SvbREP)
+cov_read_ggplot_condREP_peakREP_only$condition = "SvbREP"
+cov_read_ggplot_condREP_peakREP_only$Peak_Group = "Peak SvbREP only"
+colnames(cov_read_ggplot_condREP_peakREP_only) = c("coverage","condition","Peak")
+
+cov_read_ggplot_condInputACT_peakREP_only = as.data.frame(cov_PeakREPonly$Input_SvbACT)
+cov_read_ggplot_condInputACT_peakREP_only$condition = "Input SvbACT"
+cov_read_ggplot_condInputACT_peakREP_only$Peak_Group = "Peak SvbREP only"
+colnames(cov_read_ggplot_condInputACT_peakREP_only) =  c("coverage","condition","Peak")
+
+cov_read_ggplot_condInputRep_peakREP_only = as.data.frame(cov_PeakREPonly$Input_SvbREP)
+cov_read_ggplot_condInputRep_peakREP_only$condition = "Input SvbREP"
+cov_read_ggplot_condInputRep_peakREP_only$Peak_Group = "Peak SvbREP only"
+colnames(cov_read_ggplot_condInputRep_peakREP_only) =  c("coverage","condition","Peak")
+
+
+cov_read_ggplot_condACT_peakCommun = as.data.frame(cov_communPeak$SvbACT)
+cov_read_ggplot_condACT_peakCommun$condition = "SvbACT"
+cov_read_ggplot_condACT_peakCommun$Peak_Group = "Common Peaks"
+colnames(cov_read_ggplot_condACT_peakCommun) = c("coverage","condition","Peak")
+
+cov_read_ggplot_condREP_peakCommun = as.data.frame(cov_communPeak$SvbREP)
+cov_read_ggplot_condREP_peakCommun$condition = "SvbREP"
+cov_read_ggplot_condREP_peakCommun$Peak_Group = "Common Peaks"
+colnames(cov_read_ggplot_condREP_peakCommun) = c("coverage","condition","Peak")
+
+cov_read_ggplot_condInputACT_peakCommun = as.data.frame(cov_communPeak$Input_SvbACT)
+cov_read_ggplot_condInputACT_peakCommun$condition = "Input SvbACT"
+cov_read_ggplot_condInputACT_peakCommun$Peak_Group = "Common Peaks"
+colnames(cov_read_ggplot_condInputACT_peakCommun) =  c("coverage","condition","Peak")
+
+cov_read_ggplot_condInputRep_peakCommun = as.data.frame(cov_communPeak$Input_SvbREP)
+cov_read_ggplot_condInputRep_peakCommun$condition = "Input SvbREP"
+cov_read_ggplot_condInputRep_peakCommun$Peak_Group = "Common Peaks"
+colnames(cov_read_ggplot_condInputRep_peakCommun) =  c("coverage","condition","Peak")
+
+cov_read_ggplot_condACT_peakShift = as.data.frame(cov_PeakShift$SvbACT)
+cov_read_ggplot_condACT_peakShift$condition = "SvbACT"
+cov_read_ggplot_condACT_peakShift$Peak_Group = "Shifted Peaks"
+colnames(cov_read_ggplot_condACT_peakShift) = c("coverage","condition","Peak")
+
+cov_read_ggplot_condREP_peakShift = as.data.frame(cov_PeakShift$SvbREP)
+cov_read_ggplot_condREP_peakShift$condition = "SvbREP"
+cov_read_ggplot_condREP_peakShift$Peak_Group = "Shifted Peaks"
+colnames(cov_read_ggplot_condREP_peakShift) = c("coverage","condition","Peak")
+
+cov_read_ggplot_condInputACT_peakShift = as.data.frame(cov_PeakShift$Input_SvbACT)
+cov_read_ggplot_condInputACT_peakShift$condition = "Input SvbACT"
+cov_read_ggplot_condInputACT_peakShift$Peak_Group = "Shifted Peaks"
+colnames(cov_read_ggplot_condInputACT_peakShift) =  c("coverage","condition","Peak")
+
+cov_read_ggplot_condInputRep_peakShift = as.data.frame(cov_PeakShift$Input_SvbREP)
+cov_read_ggplot_condInputRep_peakShift$condition = "Input SvbREP"
+cov_read_ggplot_condInputRep_peakShift$Peak_Group = "Shifted Peaks"
+colnames(cov_read_ggplot_condInputRep_peakShift) =  c("coverage","condition","Peak")
+
+
+cov_read_ggplot_condACT_peakRandom = as.data.frame(cov_PeakRandom$SvbACT)
+cov_read_ggplot_condACT_peakRandom$condition = "SvbACT"
+cov_read_ggplot_condACT_peakRandom$Peak_Group = "Peaks Random"
+colnames(cov_read_ggplot_condACT_peakRandom) = c("coverage","condition","Peak")
+
+cov_read_ggplot_condREP_peakRandom = as.data.frame(cov_PeakRandom$SvbREP)
+cov_read_ggplot_condREP_peakRandom$condition = "SvbREP"
+cov_read_ggplot_condREP_peakRandom$Peak_Group = "Peaks Random"
+colnames(cov_read_ggplot_condREP_peakRandom) = c("coverage","condition","Peak")
+
+cov_read_ggplot_condInputACT_peakRandom = as.data.frame(cov_PeakRandom$Input_SvbACT)
+cov_read_ggplot_condInputACT_peakRandom$condition = "Input SvbACT"
+cov_read_ggplot_condInputACT_peakRandom$Peak_Group = "Peaks Random"
+colnames(cov_read_ggplot_condInputACT_peakRandom) =  c("coverage","condition","Peak")
+
+cov_read_ggplot_condInputRep_peakRandom = as.data.frame(cov_PeakRandom$Input_SvbREP)
+cov_read_ggplot_condInputRep_peakRandom$condition = "Input SvbREP"
+cov_read_ggplot_condInputRep_peakRandom$Peak_Group = "Peaks Random"
+colnames(cov_read_ggplot_condInputRep_peakRandom) =  c("coverage","condition","Peak")
+
+cov_read_ggplot = merge(cov_read_ggplot_condACT_peakACT_total,cov_read_ggplot_condREP_peakACT_total,all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condInputRep_peakACT_total, all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condInputAct_peakACT_total, all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condACT_peakREP_total, all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condREP_peakREP_total,all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condInputACT_peakREP_total, all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condInputREP_peakREP_total, all = T)
+cov_read_ggplot = merge(cov_read_ggplot,cov_read_ggplot_condACT_peakACT_only,all = T)
+cov_read_ggplot = merge(cov_read_ggplot,cov_read_ggplot_condREP_peakACT_only,all = T)
+cov_read_ggplot = merge(cov_read_ggplot,cov_read_ggplot_condInputACT_peakACT_only, all = T)
+cov_read_ggplot = merge(cov_read_ggplot,cov_read_ggplot_condInputRep_peakACT_only, all = T)
+cov_read_ggplot = merge(cov_read_ggplot,cov_read_ggplot_condACT_peakREP_only,all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condREP_peakREP_only,all = T )
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condInputACT_peakREP_only,all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condInputRep_peakREP_only, all = T)
+cov_read_ggplot = merge(cov_read_ggplot,cov_read_ggplot_condACT_peakCommun, all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condREP_peakCommun, all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condInputACT_peakCommun,all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condInputRep_peakCommun, all = T)
+cov_read_ggplot = merge(cov_read_ggplot,cov_read_ggplot_condACT_peakShift, all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condREP_peakShift, all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condInputACT_peakShift, all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condInputRep_peakShift,all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condACT_peakRandom,all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condREP_peakRandom,all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condInputACT_peakRandom, all = T)
+cov_read_ggplot = merge(cov_read_ggplot,cov_read_ggplot_condInputRep_peakRandom,all = T)
+
+
+comparaison = c(list(c("SvbACT","SvbREP"),c("Input SvbACT","Input SvbREP")))
+ggboxplot(cov_read_ggplot, x = "condition",y = "coverage", fill ="condition", facet.by = "Peak",palette = c("pink","orange","green","red"),add = "violin") +scale_y_continuous(trans = 'pseudo_log')  + rotate_x_text(angle = 45)+ stat_compare_means(comparisons = comparaison, method = "wilcox")
+
+ggviolin(cov_read_ggplot, x = "condition",y = "coverage", fill ="condition", facet.by = "Peak",palette = c("pink","orange","green","red"), add = "boxplot") +scale_y_continuous(trans = 'pseudo_log')  + rotate_x_text(angle = 45)+ stat_compare_means(comparisons = comparaison, method = "wilcox")
+
+ggviolin(cov_read_ggplot, x = "condition",y = "coverage", color = "condition", facet.by = "Peak",palette = c("pink","orange","green","red"), add = "boxplot") +scale_y_continuous(trans = 'pseudo_log')  + rotate_x_text(angle = 45)+ stat_compare_means(comparisons = comparaison, method = "wilcox")
+
+
+```
+
+
+Distribution taille 
+
+```{r}
+tab_length_peaks_SvbACT = as.data.frame(B1_peaks$length)
+tab_length_peaks_SvbACT$Cond = "SvbACT"
+colnames(tab_length_peaks_SvbACT) = c("length","Cond")
+
+tab_length_peaks_SvbREP = as.data.frame(FS_peaks$length)
+tab_length_peaks_SvbREP$Cond = "SvbREP"
+colnames(tab_length_peaks_SvbREP) = c("length","Cond")
+
+tab_length_peaks = merge(tab_length_peaks_SvbACT,tab_length_peaks_SvbREP,all = T)
+
+
+ggviolin(tab_length_peaks, x = "Cond",y = "length", color = "Cond",palette = c("red","green"), add = "boxplot") +scale_y_continuous(trans = 'pseudo_log')  + rotate_x_text(angle = 45)
+
+pie1(table(overlap_of_peaks_ActvsRep$overlappingPeaks$`B1.peaks///FS.peaks`$overlapFeature))
+```
+
+## Boxplot read count ( Stringent)
+
+```{r}
+cov_communPeak_stringeant = read.table("/Volumes/Promise\ RAID/Work/Alex_analyse/chipseq/Enrichment_Different_Regions/multiCov/10-4_quality/coverage_SvbACT_InputACT_SvbREP_InputREP_peak_Commun_10-4.txt", sep = "\t")
+colnames(cov_communPeak_stringeant) = c("chr","start","end","SvbACT","Input_SvbACT","SvbREP","Input_SvbREP")
+cov_communPeak_stringeant$condition = "Commun Peak"
+
+
+cov_PeakACTonly_stringeant = read.table("/Volumes/Promise\ RAID/Work/Alex_analyse/chipseq/Enrichment_Different_Regions/multiCov/10-4_quality/coverage_SvbACT_InputACT_SvbREP_InputREP_peaksACT_Only_10-4.txt", sep = "\t")
+head(cov_PeakACTonly_stringeant)
+colnames(cov_PeakACTonly_stringeant) = c("chr","start","end","SvbACT","Input_SvbACT","SvbREP","Input_SvbREP")
+cov_PeakACTonly_stringeant$condition = "SvbACT only"
+
+
+
+cov_PeakAct_total = read.table("/Volumes/Promise\ RAID/Work/Alex_analyse/chipseq/Enrichment_Different_Regions/multiCov/coverage_SvbACT_InputACT_SvbREP_InputREP_SvbACT.txt", sep = "\t")
+cov_PeakAct_total = cov_PeakAct_total[,-5:-10]
+colnames(cov_PeakAct_total) = c("chr","start","end","name","SvbACT","Input_SvbACT","SvbREP","Input_SvbREP")
+cov_PeakAct_total$condition = "SvbACT"
+cov_PeakAct_total = cov_PeakAct_total[,-4]
+
+
+cov_PeakRep_total = read.table("/Volumes/Promise\ RAID/Work/Alex_analyse/chipseq/Enrichment_Different_Regions/multiCov/coverage_SvbACT_InputACT_SvbREP_InputREP_SvbREP.txt", sep = "\t")
+cov_PeakRep_total = cov_PeakRep_total[,-5:-10]
+colnames(cov_PeakRep_total) = c("chr","start","end","name","SvbACT","Input_SvbACT","SvbREP","Input_SvbREP")
+cov_PeakRep_total$condition = "SvbREP"
+cov_PeakRep_total =cov_PeakRep_total[,-4]
+
+
+cov_PeakShift = read.table("/Volumes/Promise\ RAID/Work/Alex_analyse/chipseq/Enrichment_Different_Regions/multiCov/coverage_SvbACT_InputACT_SvbREP_InputREP_shift.txt",sep = "\t")
+colnames(cov_PeakShift) = c("chr","start","end","name","SvbACT","Input_SvbACT","SvbREP","Input_SvbREP")
+cov_PeakShift$condition = "Svb Shift"
+cov_PeakShift = cov_PeakShift[,-4]
+
+
+cov_PeakRandom = read.table("/Volumes/Promise\ RAID/Work/Alex_analyse/chipseq/Enrichment_Different_Regions/multiCov/coverage_SvbACT_InputACT_SvbREP_InputREP_random.txt", sep = "\t")
+colnames(cov_PeakRandom) = c("chr","start","end","SvbACT","Input_SvbACT","SvbREP","Input_SvbREP")
+cov_PeakRandom$condition = "Svb Random"
+
+
+boxplot(cov_PeakAct_total$SvbACT, cov_PeakAct_total$SvbREP, cov_PeakAct_total$Input_SvbACT, cov_PeakAct_total$Input_SvbREP,cov_PeakRep_total$SvbACT, cov_PeakRep_total$SvbREP, cov_PeakRep_total$Input_SvbACT, cov_PeakRep_total$Input_SvbREP,cov_communPeak_stringeant$SvbACT,cov_communPeak_stringeant$SvbREP,cov_communPeak_stringeant$Input_SvbACT,cov_communPeak_stringeant$Input_SvbREP, cov_PeakACTonly_stringeant$SvbACT,cov_PeakACTonly_stringeant$SvbREP,cov_PeakACTonly_stringeant$Input_SvbACT,cov_PeakACTonly_stringeant$Input_SvbREP,cov_PeakShift$SvbACT,cov_PeakShift$SvbREP,cov_PeakShift$Input_SvbACT,cov_PeakShift$Input_SvbREP,cov_PeakRandom$SvbACT+1,cov_PeakRandom$SvbREP+1,cov_PeakRandom$Input_SvbACT+1,cov_PeakRandom$Input_SvbREP+1, ylab = "coverage",log = "y", col = c("green","red","orange","yellow","green","red","orange","yellow","green","red","orange","yellow","green","red","orange","yellow","green","red","orange","yellow","green","red","orange","yellow","green","red","orange","yellow"),las = 2,cex.axis= 0.7, main = "Coverage of read on the differents populations of peaks")
+legend(0.5,100000,"SvbACT",bty = "n")
+legend(4.5,100000,"SvbREP", bty ="n")
+legend(8.5,100000,"Common", bty ="n")
+legend(12.5,100000,"SvbACT only ", bty ="n")
+legend(16.5,100000,"SvbREP only ", bty ="n")
+legend(20.5,100000,"Svb Shift", bty = "n")
+legend(24.5,3500000,"Svb Random",bty = "n")
+legend("bottomleft",legend = c("SvbACT","SvbREP", "Input SvbACT","Input SvbREP"), pch = c(19,19,19,19), col = c("green","red","orange","yellow") , text.col = "black")
+
+
+library(ggplot2)
+library(ggpubr)
+
+cov_read_ggplot_condACT_peakACT_total = as.data.frame(cov_PeakAct_total$SvbACT)
+cov_read_ggplot_condACT_peakACT_total$condition = "SvbACT"
+cov_read_ggplot_condACT_peakACT_total$Peak_group = "Peak SvbACT"
+colnames(cov_read_ggplot_condACT_peakACT_total) = c("coverage","condition","Peak")
+
+
+cov_read_ggplot_condREP_peakACT_total = as.data.frame(cov_PeakAct_total$SvbREP)
+cov_read_ggplot_condREP_peakACT_total$condition = "SvbREP"
+cov_read_ggplot_condREP_peakACT_total$Peak_group = "Peak SvbACT"
+colnames(cov_read_ggplot_condREP_peakACT_total) =c("coverage","condition", "Peak")
+
+cov_read_ggplot_condInputAct_peakACT_total = as.data.frame(cov_PeakAct_total$Input_SvbACT)
+cov_read_ggplot_condInputAct_peakACT_total$condition = "Input SvbACT"
+cov_read_ggplot_condInputAct_peakACT_total$Peak_goup = "Peak SvbACT"
+colnames(cov_read_ggplot_condInputAct_peakACT_total) =c("coverage","condition", "Peak")
+
+cov_read_ggplot_condInputRep_peakACT_total = as.data.frame(cov_PeakAct_total$Input_SvbREP)
+cov_read_ggplot_condInputRep_peakACT_total$condition = "Input SvbREP"
+cov_read_ggplot_condInputRep_peakACT_total$Peak_Group = "Peak SvbACT"
+colnames(cov_read_ggplot_condInputRep_peakACT_total) =c("coverage","condition", "Peak")
+
+
+cov_read_ggplot_condACT_peakREP_total = as.data.frame(cov_PeakRep_total$SvbACT)
+cov_read_ggplot_condACT_peakREP_total$condition = "SvbACT"
+cov_read_ggplot_condACT_peakREP_total$Peak_Group = "Peak SvbREP"
+colnames(cov_read_ggplot_condACT_peakREP_total) = c("coverage","condition", "Peak")
+
+cov_read_ggplot_condREP_peakREP_total = as.data.frame(cov_PeakRep_total$SvbREP)
+cov_read_ggplot_condREP_peakREP_total$condition = "SvbREP"
+cov_read_ggplot_condREP_peakREP_total$Peak_Group = "Peak SvbREP"
+colnames(cov_read_ggplot_condREP_peakREP_total) = c("coverage","condition", "Peak")
+
+
+cov_read_ggplot_condInputACT_peakREP_total = as.data.frame(cov_PeakRep_total$Input_SvbACT)
+cov_read_ggplot_condInputACT_peakREP_total$condition = "Input SvbACT"
+cov_read_ggplot_condInputACT_peakREP_total$Peak_Group = "Peak SvbREP"
+colnames(cov_read_ggplot_condInputACT_peakREP_total) = c("coverage", "condition", "Peak")
+
+cov_read_ggplot_condInputREP_peakREP_total = as.data.frame(cov_PeakRep_total$Input_SvbREP)
+cov_read_ggplot_condInputREP_peakREP_total$condition = "Input SvbREP"
+cov_read_ggplot_condInputREP_peakREP_total$Peak_Group = "Peak SvbREP"
+colnames(cov_read_ggplot_condInputREP_peakREP_total) = c("coverage", "condition", "Peak")
+
+cov_read_ggplot_condACT_peakACT_only = as.data.frame(cov_PeakACTonly_stringeant$SvbACT)
+cov_read_ggplot_condACT_peakACT_only$condition = "SvbACT"
+cov_read_ggplot_condACT_peakACT_only$Peak_Group = "Peak SvbACT only"
+colnames(cov_read_ggplot_condACT_peakACT_only) = c("coverage","condition","Peak")
+
+cov_read_ggplot_condREP_peakACT_only = as.data.frame(cov_PeakACTonly_stringeant$SvbREP)
+cov_read_ggplot_condREP_peakACT_only$condition = "SvbREP"
+cov_read_ggplot_condREP_peakACT_only$Peak_Group = "Peak SvbACT only"
+colnames(cov_read_ggplot_condREP_peakACT_only) = c("coverage","condition","Peak")
+
+cov_read_ggplot_condInputACT_peakACT_only = as.data.frame(cov_PeakACTonly_stringeant$Input_SvbACT)
+cov_read_ggplot_condInputACT_peakACT_only$condition = "Input SvbACT"
+cov_read_ggplot_condInputACT_peakACT_only$Peak_Group = "Peak SvbACT only"
+colnames(cov_read_ggplot_condInputACT_peakACT_only) =  c("coverage","condition","Peak")
+
+cov_read_ggplot_condInputRep_peakACT_only = as.data.frame(cov_PeakACTonly_stringeant$Input_SvbREP)
+cov_read_ggplot_condInputRep_peakACT_only$condition = "Input SvbREP"
+cov_read_ggplot_condInputRep_peakACT_only$Peak_Group = "Peak SvbACT only"
+colnames(cov_read_ggplot_condInputRep_peakACT_only) =  c("coverage","condition","Peak")
+
+cov_read_ggplot_condACT_peakREP_only = as.data.frame($SvbACT)
+cov_read_ggplot_condACT_peakREP_only$condition = "SvbACT"
+cov_read_ggplot_condACT_peakREP_only$Peak_Group = "Peak SvbREP only"
+colnames(cov_read_ggplot_condACT_peakREP_only) = c("coverage","condition","Peak")
+
+cov_read_ggplot_condREP_peakREP_only = as.data.frame($SvbREP)
+cov_read_ggplot_condREP_peakREP_only$condition = "SvbREP"
+cov_read_ggplot_condREP_peakREP_only$Peak_Group = "Peak SvbREP only"
+colnames(cov_read_ggplot_condREP_peakREP_only) = c("coverage","condition","Peak")
+
+cov_read_ggplot_condInputACT_peakREP_only = as.data.frame($Input_SvbACT)
+cov_read_ggplot_condInputACT_peakREP_only$condition = "Input SvbACT"
+cov_read_ggplot_condInputACT_peakREP_only$Peak_Group = "Peak SvbREP only"
+colnames(cov_read_ggplot_condInputACT_peakREP_only) =  c("coverage","condition","Peak")
+
+cov_read_ggplot_condInputRep_peakREP_only = as.data.frame($Input_SvbREP)
+cov_read_ggplot_condInputRep_peakREP_only$condition = "Input SvbREP"
+cov_read_ggplot_condInputRep_peakREP_only$Peak_Group = "Peak SvbREP only"
+colnames(cov_read_ggplot_condInputRep_peakREP_only) =  c("coverage","condition","Peak")
+
+
+cov_read_ggplot_condACT_peakCommun = as.data.frame(cov_communPeak_stringeant$SvbACT)
+cov_read_ggplot_condACT_peakCommun$condition = "SvbACT"
+cov_read_ggplot_condACT_peakCommun$Peak_Group = "Common Peaks"
+colnames(cov_read_ggplot_condACT_peakCommun) = c("coverage","condition","Peak")
+
+cov_read_ggplot_condREP_peakCommun = as.data.frame(cov_communPeak_stringeant$SvbREP)
+cov_read_ggplot_condREP_peakCommun$condition = "SvbREP"
+cov_read_ggplot_condREP_peakCommun$Peak_Group = "Common Peaks"
+colnames(cov_read_ggplot_condREP_peakCommun) = c("coverage","condition","Peak")
+
+cov_read_ggplot_condInputACT_peakCommun = as.data.frame(cov_communPeak_stringeant$Input_SvbACT)
+cov_read_ggplot_condInputACT_peakCommun$condition = "Input SvbACT"
+cov_read_ggplot_condInputACT_peakCommun$Peak_Group = "Common Peaks"
+colnames(cov_read_ggplot_condInputACT_peakCommun) =  c("coverage","condition","Peak")
+
+cov_read_ggplot_condInputRep_peakCommun = as.data.frame(cov_communPeak_stringeant$Input_SvbREP)
+cov_read_ggplot_condInputRep_peakCommun$condition = "Input SvbREP"
+cov_read_ggplot_condInputRep_peakCommun$Peak_Group = "Common Peaks"
+colnames(cov_read_ggplot_condInputRep_peakCommun) =  c("coverage","condition","Peak")
+
+cov_read_ggplot_condACT_peakShift = as.data.frame(cov_PeakShift$SvbACT)
+cov_read_ggplot_condACT_peakShift$condition = "SvbACT"
+cov_read_ggplot_condACT_peakShift$Peak_Group = "Shifted Peaks"
+colnames(cov_read_ggplot_condACT_peakShift) = c("coverage","condition","Peak")
+
+cov_read_ggplot_condREP_peakShift = as.data.frame(cov_PeakShift$SvbREP)
+cov_read_ggplot_condREP_peakShift$condition = "SvbREP"
+cov_read_ggplot_condREP_peakShift$Peak_Group = "Shifted Peaks"
+colnames(cov_read_ggplot_condREP_peakShift) = c("coverage","condition","Peak")
+
+cov_read_ggplot_condInputACT_peakShift = as.data.frame(cov_PeakShift$Input_SvbACT)
+cov_read_ggplot_condInputACT_peakShift$condition = "Input SvbACT"
+cov_read_ggplot_condInputACT_peakShift$Peak_Group = "Shifted Peaks"
+colnames(cov_read_ggplot_condInputACT_peakShift) =  c("coverage","condition","Peak")
+
+cov_read_ggplot_condInputRep_peakShift = as.data.frame(cov_PeakShift$Input_SvbREP)
+cov_read_ggplot_condInputRep_peakShift$condition = "Input SvbREP"
+cov_read_ggplot_condInputRep_peakShift$Peak_Group = "Shifted Peaks"
+colnames(cov_read_ggplot_condInputRep_peakShift) =  c("coverage","condition","Peak")
+
+
+cov_read_ggplot_condACT_peakRandom = as.data.frame(cov_PeakRandom$SvbACT)
+cov_read_ggplot_condACT_peakRandom$condition = "SvbACT"
+cov_read_ggplot_condACT_peakRandom$Peak_Group = "Peaks Random"
+colnames(cov_read_ggplot_condACT_peakRandom) = c("coverage","condition","Peak")
+
+cov_read_ggplot_condREP_peakRandom = as.data.frame(cov_PeakRandom$SvbREP)
+cov_read_ggplot_condREP_peakRandom$condition = "SvbREP"
+cov_read_ggplot_condREP_peakRandom$Peak_Group = "Peaks Random"
+colnames(cov_read_ggplot_condREP_peakRandom) = c("coverage","condition","Peak")
+
+cov_read_ggplot_condInputACT_peakRandom = as.data.frame(cov_PeakRandom$Input_SvbACT)
+cov_read_ggplot_condInputACT_peakRandom$condition = "Input SvbACT"
+cov_read_ggplot_condInputACT_peakRandom$Peak_Group = "Peaks Random"
+colnames(cov_read_ggplot_condInputACT_peakRandom) =  c("coverage","condition","Peak")
+
+cov_read_ggplot_condInputRep_peakRandom = as.data.frame(cov_PeakRandom$Input_SvbREP)
+cov_read_ggplot_condInputRep_peakRandom$condition = "Input SvbREP"
+cov_read_ggplot_condInputRep_peakRandom$Peak_Group = "Peaks Random"
+colnames(cov_read_ggplot_condInputRep_peakRandom) =  c("coverage","condition","Peak")
+
+cov_read_ggplot = merge(cov_read_ggplot_condACT_peakACT_total,cov_read_ggplot_condREP_peakACT_total,all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condInputRep_peakACT_total, all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condInputAct_peakACT_total, all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condACT_peakREP_total, all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condREP_peakREP_total,all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condInputACT_peakREP_total, all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condInputREP_peakREP_total, all = T)
+cov_read_ggplot = merge(cov_read_ggplot,cov_read_ggplot_condACT_peakACT_only,all = T)
+cov_read_ggplot = merge(cov_read_ggplot,cov_read_ggplot_condREP_peakACT_only,all = T)
+cov_read_ggplot = merge(cov_read_ggplot,cov_read_ggplot_condInputACT_peakACT_only, all = T)
+cov_read_ggplot = merge(cov_read_ggplot,cov_read_ggplot_condInputRep_peakACT_only, all = T)
+cov_read_ggplot = merge(cov_read_ggplot,cov_read_ggplot_condACT_peakREP_only,all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condREP_peakREP_only,all = T )
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condInputACT_peakREP_only,all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condInputRep_peakREP_only, all = T)
+cov_read_ggplot = merge(cov_read_ggplot,cov_read_ggplot_condACT_peakCommun, all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condREP_peakCommun, all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condInputACT_peakCommun,all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condInputRep_peakCommun, all = T)
+cov_read_ggplot = merge(cov_read_ggplot,cov_read_ggplot_condACT_peakShift, all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condREP_peakShift, all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condInputACT_peakShift, all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condInputRep_peakShift,all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condACT_peakRandom,all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condREP_peakRandom,all = T)
+cov_read_ggplot = merge(cov_read_ggplot, cov_read_ggplot_condInputACT_peakRandom, all = T)
+cov_read_ggplot = merge(cov_read_ggplot,cov_read_ggplot_condInputRep_peakRandom,all = T)
+
+
+comparaison = c(list(c("SvbACT","SvbREP"),c("Input SvbACT","Input SvbREP")))
+ggboxplot(cov_read_ggplot, x = "condition",y = "coverage", fill ="condition", facet.by = "Peak",palette = c("pink","orange","green","red"),add = "violin") +scale_y_continuous(trans = 'pseudo_log')  + rotate_x_text(angle = 45)+ stat_compare_means(comparisons = comparaison, method = "wilcox")
+
+ggviolin(cov_read_ggplot, x = "condition",y = "coverage", fill ="condition", facet.by = "Peak",palette = c("pink","orange","green","red"), add = "boxplot") +scale_y_continuous(trans = 'pseudo_log')  + rotate_x_text(angle = 45)+ stat_compare_means(comparisons = comparaison, method = "wilcox")
+
+ggviolin(cov_read_ggplot, x = "condition",y = "coverage", color = "condition", facet.by = "Peak",palette = c("pink","orange","green","red"), add = "boxplot") +scale_y_continuous(trans = 'pseudo_log')  + rotate_x_text(angle = 45)+ stat_compare_means(comparisons = comparaison, method = "wilcox")
+
+
+```
+
+#Réplicat
+
+```{r}
+repl1 = findOverlapsOfPeaks(B1_1.peaks,FS_1.peaks)
+vennDiagram(repl1$venn_cnt)
+makeVennDiagram(repl1,total = total)
+
+pool_repl1 = new("permPool",grs =GRangesList(Dm6_gene), N = length(B1_1.peaks))
+pt1_repl1 = peakPermTest(FS_1.peaks,B1_1.peaks,pool = pool_repl1, TxDb = TxDb.Dmelanogaster.UCSC.dm6.ensGene, seed = 1, force.parallel = FALSE)
+
+
+repl2 = findOverlapsOfPeaks(B1_2.peaks,FS_2.peaks)
+vennDiagram(repl2$venn_cnt)
+makeVennDiagram(repl2,total = total)
+pool_repl2 = new("permPool",grs =GRangesList(Dm6_gene), N = length(B1_2.peaks))
+pt1_repl2 = peakPermTest(FS_2.peaks,B1_2.peaks,pool = pool_repl2, TxDb = TxDb.Dmelanogaster.UCSC.dm6.ensGene, seed = 1, force.parallel = FALSE)
+```
+
+
+
+
+
+
+
+### Ratio sur low peaks 
+
+##Lecture des ratios 
+
+```{r echo=FALSE}
+ratio_overlaps_low = read.table("/Users/alexmanchenoferris/Documents/Chipseq_ActRep/python_parser/low/ratio_intensity_peak_overlap.txt", header = TRUE)
+ratio_alone_low = read.table("//Users/alexmanchenoferris/Documents/Chipseq_ActRep/python_parser/low/ratio_intensity_peak_unique.txt", header = TRUE)
+intensity_overlaps_1B_low = ratio_overlaps_low$pileup_B1
+intensity_overlaps_FS_low = ratio_overlaps_low$pileup_FS
+intensity_alone_1B_low = ratio_alone_low$pileup_B1
+intensity_alone_FS_low = ratio_alone_low$nb_read_FS
+
+ratio_alone_low = ratio_alone_low[,-2:-3]
+ratio_overlaps_low = ratio_overlaps_low[,-2:-3]
+boxplot(ratio_overlaps_low$ratio, ratio_alone_low$ratio, outline = FALSE, main = " Nombre de reads dans FS par rapport aux peaks détectés dans 1B par MACS", names = c("Ratio peaks overlaps", 'Ratio peaks "alone"'))
+
+hist(intensity_overlaps_1B_low,col="green", xlab = "Intensity", main = "Intensity of overlapping peaks ")
+
+
+hist(intensity_overlaps_FS_low,add=TRUE,col ="red")
+
+
+hist(intensity_alone_FS_low,col="red", xlab = "Intensity",main = "Intensity of 'alone' peaks ",breaks = 50)
+
+
+hist(intensity_alone_1B_low,add=TRUE,col ="green",breaks = 10)
+
+
+t.test(ratio_alone_low$ratio,ratio_overlaps_low$ratio)
+
+
+
+ratio_overlaps_amerger_low = ratio_overlaps_low
+ratio_overlaps_amerger_low$Group = "Common"
+colnames(ratio_overlaps_amerger_low) = c("Peaks","ratio","Group")
+ratio_alone_amerger_low = ratio_alone_low
+ratio_alone_amerger_low$Group = "SvbACT_only"
+colnames(ratio_alone_amerger_low) = c("Peaks","ratio","Group")
+tab_ratio_low = merge(ratio_alone_amerger_low, ratio_overlaps_amerger_low, all = T)
+ggviolin(tab_ratio_low, x = "Group",y = "ratio", color = "Group",palette = c("pink","orange"), add = "boxplot") +scale_y_continuous(trans = 'pseudo_log')  + rotate_x_text(angle = 45) 
+int_alone_1B_low = as.data.frame(intensity_alone_1B_low)
+int_alone_1B_low$Cond = "SvbACT"
+int_alone_1B_low$Group = "SvbACT_only"
+colnames(int_alone_1B_low) = c("intensity","Cond","Group")
+head(int_alone_1B_low)
+
+
+int_alone_FS_low = as.data.frame(intensity_alone_FS_low)
+int_alone_FS_low$Cond = "SvbREP"
+int_alone_FS_low$Group = "SvbACT_only"
+colnames(int_alone_FS_low) = c("intensity","Cond","Group")
+head(int_alone_FS_low)
+
+int_overlaps_1B_low = as.data.frame(intensity_overlaps_1B_low)
+int_overlaps_1B_low$Cond = "SvbACT"
+int_overlaps_1B_low$Group = "Common"
+colnames(int_overlaps_1B_low) = c("intensity","Cond","Group")
+
+int_overlaps_FS_low = as.data.frame(intensity_overlaps_FS_low)
+int_overlaps_FS_low$Cond = "SvbREP"
+int_overlaps_FS_low$Group = "Common"
+colnames(int_overlaps_FS_low) = c("intensity","Cond","Group")
+
+tab_int_low = merge(int_alone_1B_low,int_alone_FS_low , all = T)
+tab_int_low = merge(tab_int_low, int_overlaps_1B_low, all = T)
+tab_int_low = merge(tab_int_low, int_overlaps_FS_low, all = T)
+head( tab_int_low)
+ggviolin(tab_int_low, x = "Cond",y = "intensity", color = "Cond", facet.by = "Group",palette = c("red","green"), add = "boxplot") +scale_y_continuous(trans = 'pseudo_log')  + rotate_x_text(angle = 45) 
+```
+
+
+## Comparison with enhancer of STARK 
+
+```{r}
+enhancer_dm6= read.table("/Users/alexmanchenoferris/Documents/Chipseq_ActRep/enhancer_stark_dm6.bed")
+enhancer_dm6 = enhancer_dm6[1:4]
+colnames(enhancer_dm6) = c("chr","start","end","name")
+enhancer_dm6.peaks = GRanges(seqnames = Rle(enhancer_dm6$chr), ranges = IRanges(start = enhancer_dm6$start,end = enhancer_dm6$end,names= enhancer_dm6$name ))
+peaks_commun_Svb_enhancerdm6 = findOverlapsOfPeaks(SvbACT.peaks_low,enhancer_dm6.peaks, connectedPeaks = "keepAll")
+#peaks_commun_Svb_enhancerdm6= addMetadata(peaks_commun_Svb_enhancerdm6,colNames="score",FUN=mean)
+averagePeakWidth_svbenhancerdm6 = mean(width(unlist(GRangesList(peaks_commun_Svb_enhancerdm6$peaklist))))
+total = 122653977*0.1/(2*averagePeakWidth_svbenhancerdm6)
+
+makeVennDiagram(peaks_commun_Svb_enhancerdm6, totalTest = total,connectedPeaks = "keepAll")
+pt1 = peakPermTest(enhancer_dm6.peaks,SvbACT.peaks_low,pool = pool, TxDb = TxDb.Dmelanogaster.UCSC.dm6.ensGene, seed = 1234, force.parallel = FALSE)
+plot(pt1)
+pt1_inverse = peakPermTest(Svbpeaks,enhancer_dm6.peaks,pool = pool, TxDb = TxDb.Dmelanogaster.UCSC.dm6.ensGene, seed = 1234, force.parallel = FALSE)
+plot(pt1_inverse)
+```
+
+## Comparison with Svb peak in embryo 
+
+```{r}
+
+Svb_peaks_embryo= read.table("/Users/alexmanchenoferris/Documents/Chipseq_ActRep/macs/embryo/macs_svb_01_peaks.xls",sep = "\t", comment.char = "#", header = T, stringsAsFactors = F)
+Svb.peaks_embryo = GRanges(seqnames = Rle(Svb_peaks_embryo[,1]), 
+                     ranges=IRanges(start = Svb_peaks_embryo[,2],end = Svb_peaks_embryo[,3], names = Svb_peaks_embryo[,10]),
+                     strand = Rle(rep("*",nrow(Svb_peaks_embryo))),
+                     score = Svb_peaks_embryo[,7])
+
+svb =  findOverlapsOfPeaks(B1.peaks,Svb.peaks_embryo, connectedPeaks = "keepAll")
+averagePeakWidth = mean(width(unlist(GRangesList(svb$peaklist)))) 
+vennDiagram(svb$venn_cnt)
+overlaps.anno.common.svb <- annotatePeakInBatch(svb$peaklist$`SvbACT.peaks_low///Svb.peaks_embryo`,  
+                                     AnnotationData=Dm6_gene,  
+                                    output="nearestBiDirectionalPromoters", 
+                                     bindingRegion=c(-2000, 500)) 
+
+makeVennDiagram(svb,connectedPeaks = c("min","keepAll"))
+
+
+pool = new("permPool",grs =GRangesList(drs), N = length(B1.peaks)) 
+pt1 = peakPermTest(B1.peaks,Svb.peaks_embryo,pool = pool, TxDb = TxDb.Dmelanogaster.UCSC.dm6.ensGene, seed = 1, force.parallel = FALSE) 
+plot(pt1) 
+```
